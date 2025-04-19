@@ -1,4 +1,3 @@
-
 from django.utils import timezone
 from rest_framework import viewsets, generics, status, filters
 from rest_framework.decorators import action
@@ -47,38 +46,37 @@ class FeedbackViewSet(viewsets.ModelViewSet):
             return FeedbackDetailSerializer
         return FeedbackListSerializer
     
-def get_queryset(self):
-    user = self.request.user
-    
-    # Filter based on user type
-    if user.user_type == 'student':
-        # Students can only see their own feedback
-        return Feedback.objects.filter(submitter=user)
-    elif user.user_type == 'admin' and user.admin_category != 'none':
-        # Category admins can only see feedback in their category
-        return Feedback.objects.filter(
-            Q(category_name_iexact=user.admin_category) | 
-            Q(assigned_to=user)
-        )
-    # Superadmins can see all feedback
-    return Feedback.objects.all()
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Filter based on user type
+        if user.user_type == 'student':
+            # Students can only see their own feedback
+            return Feedback.objects.filter(submitter=user)
+        elif user.user_type == 'admin' and user.admin_category != 'none':
+            # Category admins can only see feedback in their category
+            return Feedback.objects.filter(
+                Q(category__name__iexact=user.admin_category) | 
+                Q(assigned_to=user)
+            )
+        # Superadmins can see all feedback
+        return Feedback.objects.all()
     
     @action(detail=False, methods=['get'])
     def dashboard(self, request):
         """Get dashboard statistics"""
         user = request.user
         
-    # Base queryset based on user type
-    # Base queryset based on user type
-    if user.user_type == 'student':
-        queryset = Feedback.objects.filter(submitter=user)
-    elif user.user_type == 'admin' and user.admin_category != 'none':
-        queryset = Feedback.objects.filter(
-            Q(category_name_iexact=user.admin_category) | 
-            Q(assigned_to=user)
-    )
-    else:
-        queryset = Feedback.objects.all()
+        # Base queryset based on user type
+        if user.user_type == 'student':
+            queryset = Feedback.objects.filter(submitter=user)
+        elif user.user_type == 'admin' and user.admin_category != 'none':
+            queryset = Feedback.objects.filter(
+                Q(category__name__iexact=user.admin_category) | 
+                Q(assigned_to=user)
+            )
+        else:
+            queryset = Feedback.objects.all()
         
         # Get counts by status
         status_counts = {
