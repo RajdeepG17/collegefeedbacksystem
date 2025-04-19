@@ -82,7 +82,7 @@ class User(AbstractUser):
 
     objects = UserManager()
 
-    def _str_(self):
+    def __str__(self):
         return self.email
     
     @property

@@ -12,7 +12,7 @@ class FeedbackCategory(models.Model):
     class Meta:
         verbose_name_plural = "Feedback Categories"
     
-    def _str_(self):
+    def __str__(self):
         return self.name
 
 class Feedback(models.Model):
@@ -60,7 +60,7 @@ class Feedback(models.Model):
     class Meta:
         ordering = ['-created_at']
     
-    def _str_(self):
+    def __str__(self):
         return self.title
     
     @property
@@ -85,7 +85,7 @@ class FeedbackComment(models.Model):
     class Meta:
         ordering = ['created_at']
     
-    def _str_(self):
+    def __str__(self):
         return f"Comment by {self.user.email} on {self.feedback.title}"
 
 class FeedbackHistory(models.Model):
@@ -116,5 +116,5 @@ class FeedbackHistory(models.Model):
         verbose_name_plural = "Feedback Histories"
         ordering = ['-timestamp']
     
-    def _str_(self):
+    def __str__(self):
         return f"Status change on {self.feedback.title} by {self.changed_by.email}"
