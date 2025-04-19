@@ -7,7 +7,7 @@ axios.defaults.xsrfHeaderName = 'X-CSRFToken';
 axios.defaults.withCredentials = true;
 
 // Base API URLs
-const BASE_URL = '/api';  // This line needs to be defined firstconst ACCOUNTS_URL = `${BASE_URL}/accounts`;
+const BASE_URL = '/api';
 const ACCOUNTS_URL = `${BASE_URL}/accounts`;
 const FEEDBACK_URL = `${BASE_URL}/feedback`;
 
