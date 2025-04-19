@@ -1,16 +1,28 @@
 from django.db import models
 from django.conf import settings
+from django.core.validators import FileExtensionValidator
+from django.core.exceptions import ValidationError
+import os
+
+def validate_file_type(value):
+    ext = os.path.splitext(value.name)[1][1:].lower()
+    if ext not in settings.ALLOWED_FILE_TYPES:
+        raise ValidationError(f'File type not allowed. Allowed types: {", ".join(settings.ALLOWED_FILE_TYPES)}')
 
 class FeedbackCategory(models.Model):
     """Model to store different feedback categories"""
     
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
     icon = models.CharField(max_length=50, blank=True, null=True, help_text="Font Awesome icon class")
     active = models.BooleanField(default=True)
     
     class Meta:
         verbose_name_plural = "Feedback Categories"
+        indexes = [
+            models.Index(fields=['name']),
+            models.Index(fields=['active']),
+        ]
     
     def __str__(self):
         return self.name
@@ -53,12 +65,30 @@ class Feedback(models.Model):
     resolved_at = models.DateTimeField(blank=True, null=True)
     
     # Additional fields
-    attachment = models.FileField(upload_to='feedback_attachments/', blank=True, null=True)
+    attachment = models.FileField(
+        upload_to='feedback_attachments/',
+        blank=True,
+        null=True,
+        validators=[validate_file_type]
+    )
     is_anonymous = models.BooleanField(default=False, help_text="Keep submitter's identity hidden")
-    rating = models.PositiveSmallIntegerField(blank=True, null=True, help_text="User satisfaction rating (1-5)")
+    rating = models.PositiveSmallIntegerField(
+        blank=True,
+        null=True,
+        help_text="User satisfaction rating (1-5)",
+        validators=[models.MinValueValidator(1), models.MaxValueValidator(5)]
+    )
     
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['priority']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['category']),
+            models.Index(fields=['submitter']),
+            models.Index(fields=['assigned_to']),
+        ]
     
     def __str__(self):
         return self.title
@@ -70,6 +100,15 @@ class Feedback(models.Model):
         if self.status in ['resolved', 'closed']:
             return (self.resolved_at - self.created_at).days
         return (timezone.now() - self.created_at).days
+        
+    def clean(self):
+        """Validate admin category matches feedback category"""
+        if self.assigned_to and self.assigned_to.user_type == 'admin':
+            if self.assigned_to.admin_category != self.category.name.lower():
+                raise ValidationError(
+                    f"Assigned admin's category ({self.assigned_to.admin_category}) "
+                    f"does not match feedback category ({self.category.name.lower()})"
+                )
 
 class FeedbackComment(models.Model):
     """Model to store comments on feedback"""
