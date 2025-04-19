@@ -11,15 +11,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     
     def validate(self, attrs):
         data = super().validate(attrs)
-        user = self.user
-        data.update({
-            'id': user.id,
-            'email': user.email,
-            'user_type': user.user_type,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'admin_category': user.admin_category if user.user_type == 'admin' else None,
-        })
+        data['user_type'] = self.user.user_type
+        data['username'] = self.user.username
+        data['email'] = self.user.email
         return data
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -27,49 +21,93 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
     password2 = serializers.CharField(write_only=True, required=True)
+    role = serializers.ChoiceField(
+        choices=[('student', 'Student'), ('admin', 'Admin'), ('superadmin', 'Super Admin')],
+        required=True
+    )
+    student_id = serializers.CharField(required=False)
+    department = serializers.CharField(required=False)
+    year_of_study = serializers.IntegerField(required=False)
 
     class Meta:
         model = User
-        fields = ('email', 'password', 'password2', 'first_name', 'last_name', 'user_type', 
-                 'admin_category', 'student_id', 'department', 'year_of_study', 'phone_number')
+        fields = ('username', 'password', 'password2', 'email', 'first_name', 'last_name', 
+                 'user_type', 'department', 'phone_number', 'role', 'student_id', 'year_of_study')
         extra_kwargs = {
             'first_name': {'required': True},
-            'last_name': {'required': True},
-            'user_type': {'required': True},
+            'last_name': {'required': True}
         }
 
     def validate(self, attrs):
-        if attrs['password'] != attrs.pop('password2'):
+        if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
         
-        # Validate user type specific fields
-        user_type = attrs.get('user_type')
-        if user_type == 'student':
+        # Validate student-specific fields
+        if attrs.get('role') == 'student':
             if not attrs.get('student_id'):
-                raise serializers.ValidationError({"student_id": "Student ID is required for student accounts."})
+                raise serializers.ValidationError({"student_id": "Student ID is required for student accounts"})
             if not attrs.get('department'):
-                raise serializers.ValidationError({"department": "Department is required for student accounts."})
+                raise serializers.ValidationError({"department": "Department is required for student accounts"})
             if not attrs.get('year_of_study'):
-                raise serializers.ValidationError({"year_of_study": "Year of study is required for student accounts."})
-        elif user_type == 'admin':
-            if not attrs.get('admin_category') or attrs['admin_category'] == 'none':
-                raise serializers.ValidationError({"admin_category": "Admin category is required for admin accounts."})
+                raise serializers.ValidationError({"year_of_study": "Year of study is required for student accounts"})
         
         return attrs
 
     def create(self, validated_data):
-        user = User.objects.create_user(**validated_data)
+        validated_data.pop('password2')
+        role = validated_data.pop('role')
+        
+        # Map role to user_type
+        validated_data['user_type'] = role
+        
+        # Create user with basic fields
+        password = validated_data.pop('password')
+        
+        # Handle student-specific fields if role is student
+        if role == 'student':
+            student_fields = {
+                'student_id': validated_data.pop('student_id', None),
+                'department': validated_data.pop('department', None),
+                'year_of_study': validated_data.pop('year_of_study', None)
+            }
+            # Add student fields to validated_data
+            validated_data.update(student_fields)
+        
+        # Create user
+        user = User.objects.create_user(
+            email=validated_data.pop('email'),
+            password=password,
+            **validated_data
+        )
+        
         return user
+
+class UserLoginSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(required=True, write_only=True)
+
+class PasswordChangeSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True, write_only=True)
+    new_password = serializers.CharField(required=True, write_only=True)
+    confirm_password = serializers.CharField(required=True, write_only=True)
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError("New passwords do not match")
+        return data
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """Serializer for user profile"""
     
     class Meta:
         model = User
-        fields = ('id', 'email', 'first_name', 'last_name', 'user_type', 'admin_category',
-                 'student_id', 'department', 'year_of_study', 'profile_picture',
-                 'phone_number', 'address', 'created_at', 'updated_at')
-        read_only_fields = ('id', 'email', 'user_type', 'created_at', 'updated_at')
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'user_type',
+                 'department', 'phone_number', 'profile_picture', 'admin_category')
+        read_only_fields = ('id', 'email', 'user_type')
 
 class ChangePasswordSerializer(serializers.Serializer):
     """Serializer for password change"""

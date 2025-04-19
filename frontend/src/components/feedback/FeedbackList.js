@@ -1,204 +1,231 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { toast } from 'react-toastify';
+import {
+  Container,
+  Paper,
+  Typography,
+  Box,
+  List,
+  ListItem,
+  ListItemText,
+  Chip,
+  IconButton,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  CircularProgress,
+} from '@mui/material';
+import {
+  Comment as CommentIcon,
+  Assignment as AssignmentIcon,
+} from '@mui/icons-material';
 
 const FeedbackList = () => {
-    const [feedbacks, setFeedbacks] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [filters, setFilters] = useState({
-        status: '',
-        priority: '',
-        category: ''
-    });
-    const [categories, setCategories] = useState([]);
+  const [feedbacks, setFeedbacks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selectedFeedback, setSelectedFeedback] = useState(null);
+  const [commentDialogOpen, setCommentDialogOpen] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const userType = localStorage.getItem('user_type');
 
-    useEffect(() => {
-        fetchFeedbacks();
-        fetchCategories();
-    }, [filters]);
+  useEffect(() => {
+    fetchFeedbacks();
+  }, []);
 
-    const fetchFeedbacks = async () => {
-        try {
-            const params = new URLSearchParams();
-            if (filters.status) params.append('status', filters.status);
-            if (filters.priority) params.append('priority', filters.priority);
-            if (filters.category) params.append('category', filters.category);
-
-            const response = await axios.get(`/api/feedback/feedbacks/?${params.toString()}`);
-            setFeedbacks(response.data.results);
-        } catch (error) {
-            console.error('Error fetching feedbacks:', error);
-            toast.error('Failed to load feedbacks');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchCategories = async () => {
-        try {
-            const response = await axios.get('/api/feedback/categories/');
-            setCategories(response.data.results);
-        } catch (error) {
-            console.error('Error fetching categories:', error);
-        }
-    };
-
-    const handleFilterChange = (e) => {
-        const { name, value } = e.target;
-        setFilters(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
-    const getStatusBadgeClass = (status) => {
-        switch (status) {
-            case 'pending':
-                return 'bg-warning';
-            case 'in_progress':
-                return 'bg-info';
-            case 'resolved':
-                return 'bg-success';
-            case 'closed':
-                return 'bg-secondary';
-            case 'rejected':
-                return 'bg-danger';
-            default:
-                return 'bg-secondary';
-        }
-    };
-
-    const getPriorityBadgeClass = (priority) => {
-        switch (priority) {
-            case 'low':
-                return 'bg-success';
-            case 'medium':
-                return 'bg-info';
-            case 'high':
-                return 'bg-warning';
-            case 'urgent':
-                return 'bg-danger';
-            default:
-                return 'bg-secondary';
-        }
-    };
-
-    if (loading) {
-        return <div className="text-center mt-5">Loading...</div>;
+  const fetchFeedbacks = async () => {
+    try {
+      const response = await axios.get('/api/feedback/feedbacks/');
+      setFeedbacks(response.data);
+    } catch (error) {
+      console.error('Error fetching feedbacks:', error);
+      setError('Failed to load feedbacks');
+    } finally {
+      setLoading(false);
     }
+  };
 
+  const handleStatusChange = async (feedbackId, newStatus) => {
+    try {
+      await axios.post(`/api/feedback/feedbacks/${feedbackId}/change_status/`, {
+        status: newStatus,
+      });
+      fetchFeedbacks();
+    } catch (error) {
+      console.error('Error changing status:', error);
+      setError('Failed to update status');
+    }
+  };
+
+  const handleCommentSubmit = async () => {
+    try {
+      await axios.post(`/api/feedback/feedbacks/${selectedFeedback.id}/comments/`, {
+        comment: newComment,
+      });
+      setCommentDialogOpen(false);
+      setNewComment('');
+      fetchFeedbacks();
+    } catch (error) {
+      console.error('Error submitting comment:', error);
+      setError('Failed to submit comment');
+    }
+  };
+
+  const getStatusColor = (status) => {
+    const colors = {
+      pending: 'warning',
+      in_progress: 'info',
+      resolved: 'success',
+      closed: 'default',
+    };
+    return colors[status] || 'default';
+  };
+
+  const getPriorityColor = (priority) => {
+    const colors = {
+      low: 'success',
+      medium: 'warning',
+      high: 'error',
+    };
+    return colors[priority] || 'default';
+  };
+
+  if (loading) {
     return (
-        <div className="container mt-5">
-            <div className="row mb-4">
-                <div className="col">
-                    <h2>Feedback List</h2>
-                </div>
-                <div className="col text-end">
-                    <Link to="/feedback/submit" className="btn btn-primary">
-                        Submit New Feedback
-                    </Link>
-                </div>
-            </div>
-
-            <div className="card shadow mb-4">
-                <div className="card-body">
-                    <div className="row mb-3">
-                        <div className="col-md-4">
-                            <select
-                                className="form-select"
-                                name="status"
-                                value={filters.status}
-                                onChange={handleFilterChange}
-                            >
-                                <option value="">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="in_progress">In Progress</option>
-                                <option value="resolved">Resolved</option>
-                                <option value="closed">Closed</option>
-                                <option value="rejected">Rejected</option>
-                            </select>
-                        </div>
-                        <div className="col-md-4">
-                            <select
-                                className="form-select"
-                                name="priority"
-                                value={filters.priority}
-                                onChange={handleFilterChange}
-                            >
-                                <option value="">All Priority</option>
-                                <option value="low">Low</option>
-                                <option value="medium">Medium</option>
-                                <option value="high">High</option>
-                                <option value="urgent">Urgent</option>
-                            </select>
-                        </div>
-                        <div className="col-md-4">
-                            <select
-                                className="form-select"
-                                name="category"
-                                value={filters.category}
-                                onChange={handleFilterChange}
-                            >
-                                <option value="">All Categories</option>
-                                {categories.map(category => (
-                                    <option key={category.id} value={category.id}>
-                                        {category.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="table-responsive">
-                        <table className="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Title</th>
-                                    <th>Category</th>
-                                    <th>Status</th>
-                                    <th>Priority</th>
-                                    <th>Submitted</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {feedbacks.map(feedback => (
-                                    <tr key={feedback.id}>
-                                        <td>
-                                            <Link to={`/feedback/${feedback.id}`}>
-                                                {feedback.title}
-                                            </Link>
-                                        </td>
-                                        <td>{feedback.category_name}</td>
-                                        <td>
-                                            <span className={`badge ${getStatusBadgeClass(feedback.status)}`}>
-                                                {feedback.status.replace('_', ' ')}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span className={`badge ${getPriorityBadgeClass(feedback.priority)}`}>
-                                                {feedback.priority}
-                                            </span>
-                                        </td>
-                                        <td>{new Date(feedback.created_at).toLocaleDateString()}</td>
-                                        <td>
-                                            <Link
-                                                to={`/feedback/${feedback.id}`}
-                                                className="btn btn-sm btn-outline-primary"
-                                            >
-                                                View
-                                            </Link>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
+        <CircularProgress />
+      </Box>
     );
+  }
+
+  return (
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Paper elevation={3} sx={{ p: 3 }}>
+        <Typography variant="h5" gutterBottom>
+          Feedback List
+        </Typography>
+
+        {error && (
+          <Typography color="error" sx={{ mb: 2 }}>
+            {error}
+          </Typography>
+        )}
+
+        <List>
+          {feedbacks.map((feedback) => (
+            <ListItem
+              key={feedback.id}
+              alignItems="flex-start"
+              divider
+              sx={{
+                '&:hover': {
+                  backgroundColor: 'action.hover',
+                },
+              }}
+            >
+              <ListItemText
+                primary={
+                  <Box display="flex" alignItems="center" justifyContent="space-between">
+                    <Typography variant="subtitle1">{feedback.title}</Typography>
+                    <Box>
+                      <Chip
+                        label={feedback.status}
+                        color={getStatusColor(feedback.status)}
+                        size="small"
+                        sx={{ mr: 1 }}
+                      />
+                      <Chip
+                        label={feedback.priority}
+                        color={getPriorityColor(feedback.priority)}
+                        size="small"
+                      />
+                    </Box>
+                  </Box>
+                }
+                secondary={
+                  <>
+                    <Typography component="span" variant="body2" color="text.primary">
+                      {feedback.description}
+                    </Typography>
+                    <Box mt={1}>
+                      <Typography variant="caption" display="block">
+                        Category: {feedback.category_name}
+                      </Typography>
+                      <Typography variant="caption" display="block">
+                        Department: {feedback.department}
+                      </Typography>
+                      <Typography variant="caption" display="block">
+                        Submitted by: {feedback.submitted_by_name}
+                      </Typography>
+                      {feedback.assigned_to_name && (
+                        <Typography variant="caption" display="block">
+                          Assigned to: {feedback.assigned_to_name}
+                        </Typography>
+                      )}
+                    </Box>
+                  </>
+                }
+              />
+              <Box>
+                <IconButton
+                  onClick={() => {
+                    setSelectedFeedback(feedback);
+                    setCommentDialogOpen(true);
+                  }}
+                >
+                  <CommentIcon />
+                </IconButton>
+                {userType === 'admin' && (
+                  <IconButton>
+                    <AssignmentIcon />
+                  </IconButton>
+                )}
+              </Box>
+            </ListItem>
+          ))}
+        </List>
+
+        <Dialog
+          open={commentDialogOpen}
+          onClose={() => setCommentDialogOpen(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>Add Comment</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Comment"
+              fullWidth
+              multiline
+              rows={4}
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+            />
+            {selectedFeedback?.comments?.map((comment) => (
+              <Paper key={comment.id} sx={{ p: 2, mt: 2 }}>
+                <Typography variant="subtitle2">{comment.user_name}</Typography>
+                <Typography variant="body2">{comment.comment}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {new Date(comment.created_at).toLocaleString()}
+                </Typography>
+              </Paper>
+            ))}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setCommentDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleCommentSubmit} variant="contained">
+              Submit Comment
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Paper>
+    </Container>
+  );
 };
 
 export default FeedbackList; 

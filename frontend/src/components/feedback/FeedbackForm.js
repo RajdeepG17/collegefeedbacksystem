@@ -1,179 +1,216 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { toast } from 'react-toastify';
+import {
+  Container,
+  Paper,
+  TextField,
+  Button,
+  Typography,
+  Box,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Alert,
+} from '@mui/material';
 
 const FeedbackForm = () => {
-    const [formData, setFormData] = useState({
+  const [categories, setCategories] = useState([]);
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    category: '',
+    department: '',
+    priority: 'medium',
+    attachment: null,
+  });
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await axios.get('/api/feedback/categories/');
+        setCategories(response.data);
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+        setError('Failed to load feedback categories');
+      }
+    };
+
+    fetchCategories();
+  }, []);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleFileChange = (e) => {
+    setFormData((prev) => ({
+      ...prev,
+      attachment: e.target.files[0],
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    const formDataToSend = new FormData();
+    Object.keys(formData).forEach((key) => {
+      if (formData[key] !== null) {
+        formDataToSend.append(key, formData[key]);
+      }
+    });
+
+    try {
+      await axios.post('/api/feedback/feedbacks/', formDataToSend, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      setSuccess('Feedback submitted successfully!');
+      setFormData({
         title: '',
         description: '',
         category: '',
+        department: '',
         priority: 'medium',
-        is_anonymous: false,
-        attachment: null
-    });
-    const [categories, setCategories] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const navigate = useNavigate();
+        attachment: null,
+      });
+    } catch (error) {
+      console.error('Error submitting feedback:', error);
+      setError(error.response?.data?.detail || 'Failed to submit feedback');
+    }
+  };
 
-    useEffect(() => {
-        // Fetch categories
-        axios.get('/api/feedback/categories/')
-            .then(response => {
-                setCategories(response.data.results);
-            })
-            .catch(error => {
-                console.error('Error fetching categories:', error);
-                toast.error('Failed to load categories');
-            });
-    }, []);
+  return (
+    <Container component="main" maxWidth="md">
+      <Box sx={{ mt: 4, mb: 4 }}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography component="h1" variant="h5" gutterBottom>
+            Submit Feedback
+          </Typography>
 
-    const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: type === 'checkbox' ? checked : value
-        }));
-    };
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
 
-    const handleFileChange = (e) => {
-        setFormData(prev => ({
-            ...prev,
-            attachment: e.target.files[0]
-        }));
-    };
+          {success && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              {success}
+            </Alert>
+          )}
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
+          <form onSubmit={handleSubmit}>
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="title"
+              label="Title"
+              name="title"
+              value={formData.title}
+              onChange={handleChange}
+            />
 
-        const formDataToSend = new FormData();
-        Object.keys(formData).forEach(key => {
-            if (formData[key] !== null) {
-                formDataToSend.append(key, formData[key]);
-            }
-        });
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="description"
+              label="Description"
+              name="description"
+              multiline
+              rows={4}
+              value={formData.description}
+              onChange={handleChange}
+            />
 
-        try {
-            await axios.post('/api/feedback/feedbacks/', formDataToSend, {
-                headers: {
-                    'Content-Type': 'multipart/form-data'
-                }
-            });
-            toast.success('Feedback submitted successfully!');
-            navigate('/dashboard');
-        } catch (error) {
-            console.error('Error submitting feedback:', error);
-            toast.error(error.response?.data?.detail || 'Failed to submit feedback');
-        } finally {
-            setLoading(false);
-        }
-    };
+            <FormControl fullWidth margin="normal" required>
+              <InputLabel id="category-label">Category</InputLabel>
+              <Select
+                labelId="category-label"
+                id="category"
+                name="category"
+                value={formData.category}
+                label="Category"
+                onChange={handleChange}
+              >
+                {categories.map((category) => (
+                  <MenuItem key={category.id} value={category.id}>
+                    {category.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
-    return (
-        <div className="container mt-5">
-            <div className="row justify-content-center">
-                <div className="col-md-8">
-                    <div className="card shadow">
-                        <div className="card-body">
-                            <h2 className="text-center mb-4">Submit Feedback</h2>
-                            <form onSubmit={handleSubmit}>
-                                <div className="mb-3">
-                                    <label htmlFor="title" className="form-label">Title</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        id="title"
-                                        name="title"
-                                        value={formData.title}
-                                        onChange={handleChange}
-                                        required
-                                    />
-                                </div>
-                                <div className="mb-3">
-                                    <label htmlFor="description" className="form-label">Description</label>
-                                    <textarea
-                                        className="form-control"
-                                        id="description"
-                                        name="description"
-                                        value={formData.description}
-                                        onChange={handleChange}
-                                        rows="5"
-                                        required
-                                    />
-                                </div>
-                                <div className="mb-3">
-                                    <label htmlFor="category" className="form-label">Category</label>
-                                    <select
-                                        className="form-select"
-                                        id="category"
-                                        name="category"
-                                        value={formData.category}
-                                        onChange={handleChange}
-                                        required
-                                    >
-                                        <option value="">Select a category</option>
-                                        {categories.map(category => (
-                                            <option key={category.id} value={category.id}>
-                                                {category.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="mb-3">
-                                    <label htmlFor="priority" className="form-label">Priority</label>
-                                    <select
-                                        className="form-select"
-                                        id="priority"
-                                        name="priority"
-                                        value={formData.priority}
-                                        onChange={handleChange}
-                                    >
-                                        <option value="low">Low</option>
-                                        <option value="medium">Medium</option>
-                                        <option value="high">High</option>
-                                        <option value="urgent">Urgent</option>
-                                    </select>
-                                </div>
-                                <div className="mb-3">
-                                    <label htmlFor="attachment" className="form-label">Attachment (Optional)</label>
-                                    <input
-                                        type="file"
-                                        className="form-control"
-                                        id="attachment"
-                                        name="attachment"
-                                        onChange={handleFileChange}
-                                    />
-                                </div>
-                                <div className="mb-3 form-check">
-                                    <input
-                                        type="checkbox"
-                                        className="form-check-input"
-                                        id="is_anonymous"
-                                        name="is_anonymous"
-                                        checked={formData.is_anonymous}
-                                        onChange={handleChange}
-                                    />
-                                    <label className="form-check-label" htmlFor="is_anonymous">
-                                        Submit anonymously
-                                    </label>
-                                </div>
-                                <div className="d-grid gap-2">
-                                    <button
-                                        type="submit"
-                                        className="btn btn-primary"
-                                        disabled={loading}
-                                    >
-                                        {loading ? 'Submitting...' : 'Submit Feedback'}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="department"
+              label="Department"
+              name="department"
+              value={formData.department}
+              onChange={handleChange}
+            />
+
+            <FormControl fullWidth margin="normal">
+              <InputLabel id="priority-label">Priority</InputLabel>
+              <Select
+                labelId="priority-label"
+                id="priority"
+                name="priority"
+                value={formData.priority}
+                label="Priority"
+                onChange={handleChange}
+              >
+                <MenuItem value="low">Low</MenuItem>
+                <MenuItem value="medium">Medium</MenuItem>
+                <MenuItem value="high">High</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Button
+              variant="contained"
+              component="label"
+              sx={{ mt: 2, mb: 2 }}
+            >
+              Upload Attachment
+              <input
+                type="file"
+                hidden
+                onChange={handleFileChange}
+              />
+            </Button>
+
+            {formData.attachment && (
+              <Typography variant="body2" sx={{ ml: 2 }}>
+                Selected file: {formData.attachment.name}
+              </Typography>
+            )}
+
+            <Button
+              type="submit"
+              fullWidth
+              variant="contained"
+              sx={{ mt: 3, mb: 2 }}
+            >
+              Submit Feedback
+            </Button>
+          </form>
+        </Paper>
+      </Box>
+    </Container>
+  );
 };
 
 export default FeedbackForm; 

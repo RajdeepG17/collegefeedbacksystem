@@ -1,24 +1,31 @@
 from django.utils import timezone
-from rest_framework import viewsets, generics, status, filters
+from rest_framework import viewsets, generics, status, filters, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
-from django.db.models import Q, Count
+from django.db.models import Q, Count, F, Case, When, Value, IntegerField
 from django.core.cache import cache
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
+from django.db.models.functions import Coalesce
+from datetime import timedelta
 
-from .models import FeedbackCategory, Feedback, FeedbackComment, FeedbackHistory
+from .models import FeedbackCategory, Feedback, FeedbackComment, FeedbackHistory, FeedbackTag, Notification
 from .serializers import (
     FeedbackCategorySerializer, FeedbackListSerializer, 
     FeedbackDetailSerializer, FeedbackCreateSerializer,
     FeedbackUpdateSerializer, FeedbackCommentSerializer,
-    FeedbackHistorySerializer
+    FeedbackHistorySerializer,
+    FeedbackTagSerializer,
+    NotificationSerializer,
+    DashboardStatsSerializer
 )
 from accounts.views import IsAdminUser
+from .services import NotificationService
+from college_feedback_system.utils.logging import logger
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
@@ -28,7 +35,7 @@ class StandardResultsSetPagination(PageNumberPagination):
 class FeedbackCategoryViewSet(viewsets.ModelViewSet):
     """ViewSet for feedback categories"""
     
-    queryset = FeedbackCategory.objects.filter(active=True)
+    queryset = FeedbackCategory.objects.filter(is_active=True)
     serializer_class = FeedbackCategorySerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -317,6 +324,41 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         
         return Response({'status': 'success'}, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'])
+    def assign(self, request, pk=None):
+        feedback = self.get_object()
+        assigned_to_id = request.data.get('assigned_to')
+        
+        if not assigned_to_id:
+            return Response(
+                {'error': 'assigned_to is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        feedback.assigned_to_id = assigned_to_id
+        feedback.status = 'in_progress'
+        feedback.save()
+        
+        serializer = self.get_serializer(feedback)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def change_status(self, request, pk=None):
+        feedback = self.get_object()
+        new_status = request.data.get('status')
+        
+        if not new_status or new_status not in dict(Feedback.STATUS_CHOICES):
+            return Response(
+                {'error': 'Invalid status'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        feedback.status = new_status
+        feedback.save()
+        
+        serializer = self.get_serializer(feedback)
+        return Response(serializer.data)
+
 class FeedbackCommentViewSet(viewsets.ModelViewSet):
     """ViewSet for feedback comments"""
     
@@ -388,3 +430,195 @@ class FeedbackHistoryViewSet(viewsets.ReadOnlyModelViewSet):
                 return FeedbackHistory.objects.filter(feedback_id=feedback_id)
         except Exception as e:
             raise DRFValidationError(f"Error fetching history: {str(e)}")
+
+class AdminDashboardViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        return Feedback.objects.all()
+
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """
+        Get dashboard statistics with optimized queries
+        """
+        try:
+            # Base queryset with select_related for optimization
+            base_qs = Feedback.objects.select_related(
+                'author',
+                'assigned_to',
+                'category'
+            ).prefetch_related('tags')
+
+            # Calculate time ranges
+            now = timezone.now()
+            last_week = now - timedelta(days=7)
+            last_month = now - timedelta(days=30)
+
+            # Get feedback counts by status with optimization
+            status_counts = base_qs.values('status').annotate(
+                count=Count('id')
+            )
+
+            # Get feedback by priority with optimization
+            priority_counts = base_qs.values('priority').annotate(
+                count=Count('id')
+            )
+
+            # Get recent feedback with optimization
+            recent_feedback = base_qs.order_by('-created_at')[:5]
+
+            # Get feedback trends (last 7 days) with optimization
+            feedback_trends = base_qs.filter(
+                created_at__gte=last_week
+            ).extra(
+                select={'date': "date(created_at)"}
+            ).values('date').annotate(
+                count=Count('id')
+            ).order_by('date')
+
+            # Get department-wise feedback distribution with optimization
+            department_stats = base_qs.exclude(
+                department=''
+            ).values('department').annotate(
+                total=Count('id'),
+                resolved=Count('id', filter=Q(status='resolved')),
+                pending=Count('id', filter=Q(status='pending')),
+                in_progress=Count('id', filter=Q(status='in_progress'))
+            ).order_by('-total')
+
+            # Get category-wise feedback distribution with optimization
+            category_stats = base_qs.values(
+                'category__name'
+            ).annotate(
+                count=Count('id')
+            ).order_by('-count')
+
+            # Get average resolution time with optimization
+            resolution_time = base_qs.filter(
+                status='resolved'
+            ).annotate(
+                resolution_days=Case(
+                    When(
+                        resolved_at__isnull=False,
+                        then=F('resolved_at') - F('created_at')
+                    ),
+                    default=Value(0),
+                    output_field=IntegerField()
+                )
+            ).aggregate(
+                avg_resolution_time=Coalesce(
+                    Count('resolution_days'),
+                    Value(0)
+                )
+            )
+
+            # Get unread notifications count with optimization
+            unread_notifications = Notification.objects.filter(
+                is_read=False
+            ).count()
+
+            stats = {
+                'status_counts': status_counts,
+                'priority_counts': priority_counts,
+                'recent_feedback': FeedbackSerializer(recent_feedback, many=True).data,
+                'feedback_trends': feedback_trends,
+                'department_stats': department_stats,
+                'category_stats': category_stats,
+                'resolution_time': resolution_time,
+                'unread_notifications': unread_notifications
+            }
+
+            serializer = DashboardStatsSerializer(stats)
+            return Response(serializer.data)
+
+        except Exception as e:
+            logger.error(
+                "dashboard_stats_error",
+                error=str(e),
+                exc_info=True
+            )
+            return Response(
+                {'error': 'Error fetching dashboard statistics'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'])
+    def notifications(self, request):
+        """
+        Get admin notifications with optimized queries
+        """
+        try:
+            notifications = Notification.objects.select_related(
+                'feedback',
+                'feedback__author',
+                'feedback__assigned_to'
+            ).order_by('-created_at')[:50]
+
+            serializer = NotificationSerializer(notifications, many=True)
+            return Response(serializer.data)
+
+        except Exception as e:
+            logger.error(
+                "admin_notifications_error",
+                error=str(e),
+                exc_info=True
+            )
+            return Response(
+                {'error': 'Error fetching notifications'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'])
+    def feedback_by_category(self, request):
+        """
+        Get feedback distribution by category with optimized queries
+        """
+        try:
+            categories = FeedbackCategory.objects.prefetch_related(
+                'feedbacks'
+            ).annotate(
+                feedback_count=Count('feedbacks'),
+                resolved_count=Count('feedbacks', filter=Q(feedbacks__status='resolved')),
+                pending_count=Count('feedbacks', filter=Q(feedbacks__status='pending'))
+            ).order_by('-feedback_count')
+
+            serializer = FeedbackCategorySerializer(categories, many=True)
+            return Response(serializer.data)
+
+        except Exception as e:
+            logger.error(
+                "category_stats_error",
+                error=str(e),
+                exc_info=True
+            )
+            return Response(
+                {'error': 'Error fetching category statistics'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'])
+    def feedback_by_tag(self, request):
+        """
+        Get feedback distribution by tag with optimized queries
+        """
+        try:
+            tags = FeedbackTag.objects.prefetch_related(
+                'feedbacks'
+            ).annotate(
+                feedback_count=Count('feedbacks')
+            ).order_by('-feedback_count')
+
+            serializer = FeedbackTagSerializer(tags, many=True)
+            return Response(serializer.data)
+
+        except Exception as e:
+            logger.error(
+                "tag_stats_error",
+                error=str(e),
+                exc_info=True
+            )
+            return Response(
+                {'error': 'Error fetching tag statistics'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

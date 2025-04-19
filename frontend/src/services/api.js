@@ -2,9 +2,10 @@ import axios from 'axios';
 
 const api = axios.create({
     baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000/api',
-    withCredentials: true,
+    withCredentials: false,
     headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json'
     },
 });
 
@@ -33,10 +34,10 @@ api.interceptors.response.use(
             originalRequest._retry = true;
             try {
                 // Attempt to refresh token
-                const response = await api.post('/auth/refresh-token');
-                const { token } = response.data;
-                localStorage.setItem('token', token);
-                originalRequest.headers.Authorization = `Bearer ${token}`;
+                const response = await api.post('/auth/token/refresh/');
+                const { access } = response.data;
+                localStorage.setItem('token', access);
+                originalRequest.headers.Authorization = `Bearer ${access}`;
                 return api(originalRequest);
             } catch (refreshError) {
                 // If refresh fails, redirect to login
@@ -54,7 +55,9 @@ export const auth = {
     login: (data) => api.post('/auth/login/', data),
     register: (data) => api.post('/auth/register/', data),
     logout: () => api.post('/auth/logout/'),
-    refreshToken: () => api.post('/auth/refresh-token/'),
+    refreshToken: () => api.post('/auth/token/refresh/'),
+    getUser: () => api.get('/auth/user/'),
+    updateProfile: (data) => api.patch('/auth/profile/', data),
 };
 
 // Feedback endpoints

@@ -1,98 +1,102 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { toast } from 'react-toastify';
-import { useAuth } from '../../contexts/AuthContext';
+import {
+  Container,
+  Paper,
+  TextField,
+  Button,
+  Typography,
+  Box,
+  Alert,
+} from '@mui/material';
 
 const Login = () => {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [loading, setLoading] = useState(false);
-    const navigate = useNavigate();
-    const { login } = useAuth();
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState({
+    username: '',
+    password: '',
+  });
+  const [error, setError] = useState('');
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
 
-        try {
-            const response = await axios.post('/api/auth/token/', {
-                email,
-                password
-            });
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await axios.post('/api/auth/login/', formData);
+      localStorage.setItem('token', response.data.access);
+      localStorage.setItem('refresh_token', response.data.refresh);
+      localStorage.setItem('user_type', response.data.user_type);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.access}`;
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Login failed. Please try again.');
+    }
+  };
 
-            const { access, refresh, ...userData } = response.data;
-            
-            // Store tokens and user data
-            login(access, refresh, userData);
-            
-            toast.success('Login successful!');
-            navigate('/dashboard');
-        } catch (error) {
-            console.error('Login error:', error);
-            toast.error(error.response?.data?.detail || 'Login failed. Please try again.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="container mt-5">
-            <div className="row justify-content-center">
-                <div className="col-md-6">
-                    <div className="card shadow">
-                        <div className="card-body">
-                            <h2 className="text-center mb-4">Login</h2>
-                            <form onSubmit={handleSubmit}>
-                                <div className="mb-3">
-                                    <label htmlFor="email" className="form-label">Email address</label>
-                                    <input
-                                        type="email"
-                                        className="form-control"
-                                        id="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <div className="mb-3">
-                                    <label htmlFor="password" className="form-label">Password</label>
-                                    <input
-                                        type="password"
-                                        className="form-control"
-                                        id="password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <div className="d-grid gap-2">
-                                    <button
-                                        type="submit"
-                                        className="btn btn-primary"
-                                        disabled={loading}
-                                    >
-                                        {loading ? 'Logging in...' : 'Login'}
-                                    </button>
-                                </div>
-                                <div className="text-center mt-3">
-                                    <a href="/forgot-password" className="text-decoration-none">
-                                        Forgot Password?
-                                    </a>
-                                </div>
-                                <div className="text-center mt-2">
-                                    Don't have an account?{' '}
-                                    <a href="/register" className="text-decoration-none">
-                                        Register here
-                                    </a>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
+  return (
+    <Container component="main" maxWidth="xs">
+      <Box
+        sx={{
+          marginTop: 8,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+        }}
+      >
+        <Paper elevation={3} sx={{ padding: 4, width: '100%' }}>
+          <Typography component="h1" variant="h5" align="center" gutterBottom>
+            Sign In
+          </Typography>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          <form onSubmit={handleSubmit}>
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="username"
+              label="Username"
+              name="username"
+              autoComplete="username"
+              autoFocus
+              value={formData.username}
+              onChange={handleChange}
+            />
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              name="password"
+              label="Password"
+              type="password"
+              id="password"
+              autoComplete="current-password"
+              value={formData.password}
+              onChange={handleChange}
+            />
+            <Button
+              type="submit"
+              fullWidth
+              variant="contained"
+              sx={{ mt: 3, mb: 2 }}
+            >
+              Sign In
+            </Button>
+          </form>
+        </Paper>
+      </Box>
+    </Container>
+  );
 };
 
 export default Login; 

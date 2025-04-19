@@ -23,6 +23,15 @@ const theme = createTheme({
       'sans-serif',
     ].join(','),
   },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+        },
+      },
+    },
+  },
 });
 
 export default theme; 

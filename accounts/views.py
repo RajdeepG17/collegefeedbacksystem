@@ -1,10 +1,10 @@
-
-from django.contrib.auth import get_user_model, login, logout
+from django.contrib.auth import get_user_model, login, logout, authenticate
 from rest_framework import status, permissions, viewsets, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .serializers import (
     UserSerializer, UserRegistrationSerializer, 
@@ -42,30 +42,40 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
     
     def post(self, request):
-        from django.contrib.auth import authenticate
-        
-        email = request.data.get('email')
-        password = request.data.get('password')
-        
-        if not email or not password:
-            return Response(
-                {'error': 'Please provide both email and password'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        try:
+            email = request.data.get('email')
+            password = request.data.get('password')
             
-        user = authenticate(request, username=email, password=password)
-        
-        if user:
-            login(request, user)
-            return Response({
-                'user': UserSerializer(user).data,
-                'message': 'Login successful'
-            })
-        
-        return Response(
-            {'error': 'Invalid credentials'}, 
-            status=status.HTTP_401_UNAUTHORIZED
-        )
+            if not email or not password:
+                return Response(
+                    {'error': 'Please provide both email and password'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Use username=email since Django's authenticate expects username
+            user = authenticate(username=email, password=password)
+            
+            if user is not None and user.is_active:
+                refresh = RefreshToken.for_user(user)
+                return Response({
+                    'user': UserSerializer(user).data,
+                    'tokens': {
+                        'refresh': str(refresh),
+                        'access': str(refresh.access_token),
+                    },
+                    'message': 'Login successful'
+                })
+            
+            return Response(
+                {'error': 'Invalid credentials'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        except Exception as e:
+            print(f"Login error: {str(e)}")  # Add debug print
+            return Response(
+                {'error': 'An error occurred during login. Please try again.'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class LogoutView(APIView):
     """View for user logout"""

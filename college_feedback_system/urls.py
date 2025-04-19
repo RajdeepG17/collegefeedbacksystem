@@ -24,7 +24,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('authentication.urls')),
     path('api/feedback/', include('feedback.urls')),
-    path('accounts/', include('allauth.urls')),
+    path('accounts/', include('accounts.urls')),
     re_path(r'^.*', TemplateView.as_view(template_name='index.html')),
 ]
 

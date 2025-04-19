@@ -21,13 +21,13 @@ export const feedbackSchema = Yup.object().shape({
     is_anonymous: Yup.boolean(),
     
     attachment: Yup.mixed()
-        .test('fileSize', 'File size must be less than 5MB', (value) => {
+        .test('fileSize', 'File size must be less than 10MB', (value) => {
             if (!value) return true;
-            return value.size <= 5 * 1024 * 1024;
+            return value.size <= 10 * 1024 * 1024;
         })
-        .test('fileType', 'Invalid file type', (value) => {
+        .test('fileType', 'Only image files are allowed (jpg, jpeg, png, gif)', (value) => {
             if (!value) return true;
-            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
             return allowedTypes.includes(value.type);
         }),
 });
@@ -41,13 +41,13 @@ export const commentSchema = Yup.object().shape({
     is_internal: Yup.boolean(),
     
     attachment: Yup.mixed()
-        .test('fileSize', 'File size must be less than 5MB', (value) => {
+        .test('fileSize', 'File size must be less than 10MB', (value) => {
             if (!value) return true;
-            return value.size <= 5 * 1024 * 1024;
+            return value.size <= 10 * 1024 * 1024;
         })
-        .test('fileType', 'Invalid file type', (value) => {
+        .test('fileType', 'Only image files are allowed (jpg, jpeg, png, gif)', (value) => {
             if (!value) return true;
-            const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'];
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
             return allowedTypes.includes(value.type);
         }),
 });

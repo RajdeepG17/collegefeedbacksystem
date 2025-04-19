@@ -30,102 +30,73 @@ class UserManager(BaseUserManager):
 
     def create_user(self, email, password=None, **extra_fields):
         """Create and save a regular User with the given email and password."""
-        extra_fields.setdefault('is_staff', False)
-        extra_fields.setdefault('is_superuser', False)
-        return self._create_user(email, password, **extra_fields)
+        if not email:
+            raise ValueError('The Email field must be set')
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
 
-    def create_superuser(self, email, password, **extra_fields):
+    def create_superuser(self, email, password=None, **extra_fields):
         """Create and save a SuperUser with the given email and password."""
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
-        extra_fields.setdefault('user_type', 'superadmin')
+        extra_fields.setdefault('user_type', 'admin')
 
         if extra_fields.get('is_staff') is not True:
             raise ValueError('Superuser must have is_staff=True.')
         if extra_fields.get('is_superuser') is not True:
             raise ValueError('Superuser must have is_superuser=True.')
 
-        return self._create_user(email, password, **extra_fields)
+        return self.create_user(email, password, **extra_fields)
 
 class User(AbstractUser):
-    """Custom User model with email as the unique identifier."""
-    
     USER_TYPE_CHOICES = (
         ('student', 'Student'),
+        ('teacher', 'Teacher'),
         ('admin', 'Admin'),
-        ('superadmin', 'Super Admin'),
     )
 
-    ADMIN_CATEGORY_CHOICES = (
+    username = None
+    email = models.EmailField(_('email address'), unique=True)
+    user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default='student')
+    profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)
+    bio = models.TextField(max_length=500, blank=True)
+    date_joined = models.DateTimeField(auto_now_add=True)
+    last_login = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+    department = models.CharField(max_length=100, blank=True)
+    phone_number = models.CharField(max_length=15, blank=True)
+    student_id = models.CharField(max_length=8, validators=[validate_student_id], blank=True)
+    year_of_study = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)], blank=True, null=True)
+    admin_category = models.CharField(max_length=20, choices=(
         ('academic', 'Academic'),
         ('infrastructure', 'Infrastructure'),
         ('administrative', 'Administrative'),
         ('other', 'Other'),
         ('none', 'None'),
-    )
-    
-    username = None
-    email = models.EmailField(_('email address'), unique=True)
-    user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default='student')
-    admin_category = models.CharField(
-        max_length=20, 
-        choices=ADMIN_CATEGORY_CHOICES, 
-        default='none',
-        help_text="Category of feedback this admin manages (only applicable for admin users)"
-    )
-    
-    # Additional fields for students
-    student_id = models.CharField(
-        max_length=20,
-        blank=True,
-        null=True,
-        validators=[validate_student_id],
-        help_text="Format: 2 letters followed by 6 numbers (e.g., AB123456)"
-    )
-    department = models.CharField(max_length=100, blank=True, null=True)
-    year_of_study = models.PositiveSmallIntegerField(
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(1), MaxValueValidator(5)]
-    )
-    
-    # Profile information
-    profile_picture = models.ImageField(
-        upload_to='profile_pics/',
-        blank=True,
-        null=True,
-        validators=[FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png'])]
-    )
-    phone_number = models.CharField(
-        max_length=15,
-        blank=True,
-        null=True,
-        validators=[RegexValidator(
-            regex=r'^\+?1?\d{9,15}$',
-            message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed."
-        )]
-    )
-    address = models.TextField(blank=True, null=True)
-    
-    # Timestamp fields
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = []
+    ), default='none')
+    is_staff_member = models.BooleanField(default=False)
 
     objects = UserManager()
 
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['user_type']
+
+    class Meta:
+        verbose_name = _('user')
+        verbose_name_plural = _('users')
+
     def __str__(self):
         return self.email
-    
-    @property
-    def full_name(self):
+
+    def get_full_name(self):
         return f"{self.first_name} {self.last_name}"
-    
-    def is_admin_for_category(self, category):
-        """Check if user is admin for the given feedback category"""
-        return self.user_type == 'admin' and self.admin_category == category
+
+    def get_short_name(self):
+        return self.first_name
 
     def clean(self):
         """Validate user data"""
