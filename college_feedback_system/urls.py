@@ -22,8 +22,9 @@ from django.views.generic import TemplateView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/accounts/', include('accounts.urls')),
+    path('api/auth/', include('authentication.urls')),
     path('api/feedback/', include('feedback.urls')),
+    path('accounts/', include('allauth.urls')),
     re_path(r'^.*', TemplateView.as_view(template_name='index.html')),
 ]
 

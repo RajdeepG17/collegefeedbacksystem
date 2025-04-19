@@ -147,9 +147,14 @@ class FeedbackTests(APITestCase):
     
     def test_feedback_rate(self):
         """Test rating feedback"""
-        self.feedback.status = 'resolved'
-        self.feedback.save()
+        # First resolve the feedback as admin
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            reverse('feedback-resolve', args=[self.feedback.id])
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         
+        # Then rate it as the student
         self.client.force_authenticate(user=self.student)
         data = {
             'rating': 5,
@@ -157,7 +162,8 @@ class FeedbackTests(APITestCase):
         }
         response = self.client.post(
             reverse('feedback-rate', args=[self.feedback.id]),
-            data
+            data,
+            format='json'
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.feedback.refresh_from_db()
@@ -176,6 +182,7 @@ class FeedbackTests(APITestCase):
         """Test creating comment"""
         self.client.force_authenticate(user=self.admin)
         data = {
+            'feedback': self.feedback.id,
             'comment': 'New comment',
             'is_internal': False
         }
@@ -209,24 +216,23 @@ class FeedbackTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         
         # Test student cannot update feedback status
-        data = {
-            'status': 'in_progress',
-            'priority': 'high'
-        }
+        data = {'status': 'resolved'}
         response = self.client.patch(
             reverse('feedback-detail', args=[self.feedback.id]),
-            data
+            data,
+            format='json'
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         
-        # Test admin cannot rate feedback
-        self.client.force_authenticate(user=self.admin)
+        # Test student cannot create internal comments
         data = {
-            'rating': 5,
-            'comment': 'Great service!'
+            'feedback': self.feedback.id,
+            'comment': 'Internal comment',
+            'is_internal': True
         }
         response = self.client.post(
-            reverse('feedback-rate', args=[self.feedback.id]),
-            data
+            reverse('feedback-comment-list', args=[self.feedback.id]),
+            data,
+            format='json'
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

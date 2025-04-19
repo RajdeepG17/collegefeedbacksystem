@@ -101,10 +101,17 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         except Exception as e:
             raise DRFValidationError(f"Error creating feedback: {str(e)}")
     
+    def get_permissions(self):
+        if self.action in ['update', 'partial_update', 'resolve']:
+            return [IsAdminUser()]
+        return [IsAuthenticated()]
+    
     def perform_update(self, serializer):
         try:
             feedback = self.get_object()
-            if feedback.status in ['resolved', 'closed'] and not self.request.user.user_type in ['admin', 'superadmin']:
+            if not self.request.user.user_type in ['admin', 'superadmin']:
+                raise PermissionDenied("Only admins can update feedback")
+            if feedback.status in ['resolved', 'closed']:
                 raise PermissionDenied("Cannot update resolved or closed feedback")
             serializer.save()
         except ValidationError as e:
@@ -273,52 +280,42 @@ class FeedbackViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def rate(self, request, pk=None):
-        """Rate a resolved feedback"""
-        try:
-            feedback = self.get_object()
-            
-            if feedback.status != 'resolved':
-                raise DRFValidationError('Only resolved feedback can be rated.')
-            
-            if request.user != feedback.submitter:
-                raise PermissionDenied('Only the feedback submitter can rate it.')
-            
-            rating = request.data.get('rating')
-            comment = request.data.get('comment', '')
-            
-            if not rating or not isinstance(rating, int) or rating < 1 or rating > 5:
-                raise DRFValidationError('Rating must be an integer between 1 and 5.')
-            
-            feedback.rating = rating
-            feedback.save()
-            
-            if comment:
-                FeedbackComment.objects.create(
-                    feedback=feedback,
-                    user=request.user,
-                    comment=comment,
-                    is_internal=False
-                )
-            
-            return Response({
-                'message': 'Feedback rated successfully',
-                'feedback': FeedbackDetailSerializer(feedback, context={'request': request}).data
-            })
-        except PermissionDenied as e:
+        """Rate feedback"""
+        feedback = self.get_object()
+        
+        if request.user != feedback.submitter:
             return Response(
-                {'error': 'Permission denied', 'detail': str(e)},
+                {'error': 'Only the submitter can rate feedback'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        except DRFValidationError as e:
+        
+        if feedback.status != 'resolved':
             return Response(
-                {'error': 'Invalid operation', 'detail': str(e)},
+                {'error': 'Can only rate resolved feedback'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        except Exception as e:
+        
+        rating = request.data.get('rating')
+        if not rating or not isinstance(rating, (int, float)) or rating < 1 or rating > 5:
             return Response(
-                {'error': f"Error rating feedback: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'error': 'Rating must be a number between 1 and 5'},
+                status=status.HTTP_400_BAD_REQUEST
             )
+        
+        feedback.rating = rating
+        feedback.save()
+        
+        # Create a comment if provided
+        comment = request.data.get('comment')
+        if comment:
+            FeedbackComment.objects.create(
+                feedback=feedback,
+                user=request.user,
+                comment=comment,
+                is_internal=False
+            )
+        
+        return Response({'status': 'success'}, status=status.HTTP_200_OK)
 
 class FeedbackCommentViewSet(viewsets.ModelViewSet):
     """ViewSet for feedback comments"""
@@ -327,25 +324,19 @@ class FeedbackCommentViewSet(viewsets.ModelViewSet):
     serializer_class = FeedbackCommentSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
+    throttle_classes = [UserRateThrottle]
     
     def get_queryset(self):
         try:
             feedback_id = self.kwargs.get('feedback_id')
             user = self.request.user
             
-            if user.user_type == 'student':
-                return FeedbackComment.objects.filter(
-                    feedback_id=feedback_id,
-                    feedback__submitter=user,
-                    is_internal=False
-                )
-            elif user.user_type == 'admin' and user.admin_category != 'none':
-                return FeedbackComment.objects.filter(
-                    feedback_id=feedback_id,
-                    feedback__category__name__iexact=user.admin_category
-                )
-            else:
-                return FeedbackComment.objects.filter(feedback_id=feedback_id)
+            queryset = FeedbackComment.objects.filter(feedback_id=feedback_id)
+            
+            if user.user_type not in ['admin', 'superadmin']:
+                queryset = queryset.filter(is_internal=False)
+            
+            return queryset.select_related('user', 'feedback')
         except Exception as e:
             raise DRFValidationError(f"Error fetching comments: {str(e)}")
     
@@ -354,15 +345,19 @@ class FeedbackCommentViewSet(viewsets.ModelViewSet):
             feedback_id = self.kwargs.get('feedback_id')
             feedback = Feedback.objects.get(id=feedback_id)
             
-            if feedback.status in ['resolved', 'closed'] and not self.request.user.user_type in ['admin', 'superadmin']:
-                raise PermissionDenied("Cannot comment on resolved or closed feedback")
+            # Check if user can create internal comments
+            if serializer.validated_data.get('is_internal', False):
+                if self.request.user.user_type not in ['admin', 'superadmin']:
+                    raise PermissionDenied('Only admins can create internal comments')
             
             serializer.save(
-                feedback_id=feedback_id,
+                feedback=feedback,
                 user=self.request.user
             )
-        except ValidationError as e:
-            raise DRFValidationError(str(e))
+        except PermissionDenied as e:
+            raise PermissionDenied(str(e))
+        except Feedback.DoesNotExist:
+            raise DRFValidationError('Feedback not found')
         except Exception as e:
             raise DRFValidationError(f"Error creating comment: {str(e)}")
 

@@ -1,6 +1,6 @@
 from django.db import models
 from django.conf import settings
-from django.core.validators import FileExtensionValidator
+from django.core.validators import FileExtensionValidator, MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
 import os
 
@@ -76,7 +76,7 @@ class Feedback(models.Model):
         blank=True,
         null=True,
         help_text="User satisfaction rating (1-5)",
-        validators=[models.MinValueValidator(1), models.MaxValueValidator(5)]
+        validators=[MinValueValidator(1), MaxValueValidator(5)]
     )
     
     class Meta:

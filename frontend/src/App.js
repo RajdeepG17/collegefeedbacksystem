@@ -14,6 +14,12 @@ import FeedbackList from './pages/FeedbackList';
 import FeedbackDetail from './pages/FeedbackDetail';
 import Profile from './pages/Profile';
 import PrivateRoute from './components/PrivateRoute';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import ProtectedRoute from './components/auth/ProtectedRoute';
+import Navbar from './components/Navbar';
+import { Navigate } from 'react-router-dom';
+import FeedbackForm from './components/feedback/FeedbackForm';
 
 function App() {
   return (
@@ -23,6 +29,8 @@ function App() {
         <FeedbackProvider>
           <Router>
             <Layout>
+              <Navbar />
+              <ToastContainer />
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/login" element={<Login />} />
@@ -30,25 +38,33 @@ function App() {
                 <Route
                   path="/dashboard"
                   element={
-                    <PrivateRoute>
+                    <ProtectedRoute>
                       <Dashboard />
-                    </PrivateRoute>
+                    </ProtectedRoute>
                   }
                 />
                 <Route
                   path="/feedback"
                   element={
-                    <PrivateRoute>
+                    <ProtectedRoute>
                       <FeedbackList />
-                    </PrivateRoute>
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/feedback/submit"
+                  element={
+                    <ProtectedRoute>
+                      <FeedbackForm />
+                    </ProtectedRoute>
                   }
                 />
                 <Route
                   path="/feedback/:id"
                   element={
-                    <PrivateRoute>
+                    <ProtectedRoute>
                       <FeedbackDetail />
-                    </PrivateRoute>
+                    </ProtectedRoute>
                   }
                 />
                 <Route
@@ -59,6 +75,7 @@ function App() {
                     </PrivateRoute>
                   }
                 />
+                <Route path="/" element={<Navigate to="/dashboard" />} />
               </Routes>
             </Layout>
           </Router>

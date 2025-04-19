@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator, MinValueValidator, MaxValueValidator, FileExtensionValidator
 import re
 
 def validate_student_id(value):
@@ -85,7 +86,7 @@ class User(AbstractUser):
     year_of_study = models.PositiveSmallIntegerField(
         blank=True,
         null=True,
-        validators=[models.MinValueValidator(1), models.MaxValueValidator(5)]
+        validators=[MinValueValidator(1), MaxValueValidator(5)]
     )
     
     # Profile information
