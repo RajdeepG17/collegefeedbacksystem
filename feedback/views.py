@@ -35,14 +35,15 @@ class StandardResultsSetPagination(PageNumberPagination):
 class FeedbackCategoryViewSet(viewsets.ModelViewSet):
     """ViewSet for feedback categories"""
     
-    queryset = FeedbackCategory.objects.filter(is_active=True)
+    queryset = FeedbackCategory.objects.filter(active=True)
     serializer_class = FeedbackCategorySerializer
-    permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     throttle_classes = [UserRateThrottle]
     
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action in ['list', 'retrieve']:
+            return [permissions.AllowAny()]
+        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsAdminUser()]
         return [IsAuthenticated()]
 

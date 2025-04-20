@@ -13,44 +13,149 @@ import {
   Chip,
   Grid,
   Paper,
-  IconButton
+  IconButton,
+  FormControlLabel,
+  Checkbox,
+  FormHelperText
 } from '@mui/material';
 import { PhotoCamera, Delete } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { createFeedback, getCategories, getTags } from '../../services/feedbackService';
+import { feedback } from '../../services/api';
 
 const FeedbackForm = () => {
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [category, setCategory] = useState('');
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [priority, setPriority] = useState('medium');
-  const [isAnonymous, setIsAnonymous] = useState(false);
-  const [file, setFile] = useState(null);
+  const [formData, setFormData] = useState({
+    title: '',
+    content: '',
+    category: '',
+    rating: 3,
+    is_anonymous: false,
+    attachment: null
+  });
+  const [errors, setErrors] = useState({});
   const [preview, setPreview] = useState(null);
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [success, setSuccess] = useState(false);
   const [categories, setCategories] = useState([]);
-  const [tags, setTags] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
   const navigate = useNavigate();
-  const { auth } = useAuth();
+  const { user } = useAuth();
 
   useEffect(() => {
-    const fetchData = async () => {
+    // Fetch categories when component mounts
+    const fetchCategories = async () => {
       try {
-        const [categoriesRes, tagsRes] = await Promise.all([
-          getCategories(),
-          getTags()
-        ]);
-        setCategories(categoriesRes.data);
-        setTags(tagsRes.data);
+        setLoadingCategories(true);
+        console.log('Fetching feedback categories...');
+        
+        // Try multiple approaches to fetch categories
+        let categoriesData = [];
+        let fetchError = null;
+        
+        // Approach 1: Using feedback service
+        try {
+          console.log('Approach 1: Using feedback.getCategories()');
+          const response = await feedback.getCategories();
+          console.log('Categories response from service:', response.data);
+          
+          if (response.data && Array.isArray(response.data)) {
+            categoriesData = response.data;
+            console.log('Successfully fetched categories using service:', categoriesData);
+          } else if (response.data && response.data.results && Array.isArray(response.data.results)) {
+            // Handle paginated response
+            categoriesData = response.data.results;
+            console.log('Successfully fetched paginated categories:', categoriesData);
+          }
+        } catch (serviceError) {
+          console.error('Error fetching categories with service:', serviceError);
+          fetchError = serviceError;
+          
+          // Approach 2: Direct fetch with full URL
+          try {
+            console.log('Approach 2: Using direct fetch with absolute URL');
+            const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+            const response = await fetch(`${baseUrl}/feedback/categories/`);
+            
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('Categories response from direct fetch:', data);
+            
+            if (Array.isArray(data)) {
+              categoriesData = data;
+            } else if (data && data.results && Array.isArray(data.results)) {
+              categoriesData = data.results;
+            }
+            
+            console.log('Successfully fetched categories using direct fetch:', categoriesData);
+          } catch (fetchError) {
+            console.error('Error with direct fetch:', fetchError);
+            
+            // Approach 3: Hardcoded fallback categories if everything fails
+            console.log('Approach 3: Using hardcoded categories as fallback');
+            categoriesData = [
+              { id: 'academic', name: 'Academic' },
+              { id: 'infrastructure', name: 'Infrastructure' },
+              { id: 'administrative', name: 'Administrative' },
+              { id: 'other', name: 'Other' }
+            ];
+            console.log('Using fallback categories:', categoriesData);
+          }
+        }
+        
+        // Set the categories regardless of which approach worked
+        setCategories(categoriesData);
       } catch (err) {
-        setError('Failed to load categories and tags');
+        console.error('All category fetch methods failed:', err);
+        // Use hardcoded fallback as last resort
+        setCategories([
+          { id: 'academic', name: 'Academic' },
+          { id: 'infrastructure', name: 'Infrastructure' },
+          { id: 'administrative', name: 'Administrative' },
+          { id: 'other', name: 'Other' }
+        ]);
+      } finally {
+        setLoadingCategories(false);
       }
     };
-    fetchData();
+
+    fetchCategories();
   }, []);
+
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.title.trim()) {
+      newErrors.title = 'Title is required';
+    }
+    if (!formData.content.trim()) {
+      newErrors.content = 'Content is required';
+    }
+    if (!formData.category) {
+      newErrors.category = 'Category is required';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleChange = (e) => {
+    const { name, value, checked, type } = e.target;
+    setFormData({
+      ...formData,
+      [name]: type === 'checkbox' ? checked : value
+    });
+    
+    // Clear error for this field
+    if (errors[name]) {
+      setErrors({
+        ...errors,
+        [name]: ''
+      });
+    }
+  };
 
   const handleFileChange = (event) => {
     const selectedFile = event.target.files[0];
@@ -58,18 +163,33 @@ const FeedbackForm = () => {
       // Validate file type
       const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
       if (!allowedTypes.includes(selectedFile.type)) {
-        setError('Only image files (jpg, jpeg, png, gif) are allowed');
+        setErrors({
+          ...errors, 
+          attachment: 'Only image files (jpg, jpeg, png, gif) are allowed'
+        });
         return;
       }
 
       // Validate file size (10MB)
       if (selectedFile.size > 10 * 1024 * 1024) {
-        setError('File size must be less than 10MB');
+        setErrors({
+          ...errors,
+          attachment: 'File size must be less than 10MB'
+        });
         return;
       }
 
-      setFile(selectedFile);
-      setError('');
+      setFormData({
+        ...formData,
+        attachment: selectedFile
+      });
+      
+      if (errors.attachment) {
+        setErrors({
+          ...errors,
+          attachment: ''
+        });
+      }
 
       // Create preview
       const reader = new FileReader();
@@ -81,43 +201,76 @@ const FeedbackForm = () => {
   };
 
   const handleRemoveFile = () => {
-    setFile(null);
+    setFormData({
+      ...formData,
+      attachment: null
+    });
     setPreview(null);
+    if (errors.attachment) {
+      setErrors({
+        ...errors,
+        attachment: ''
+      });
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setSubmitError('');
+    
+    // Validate form
+    if (!validateForm()) {
+      return;
+    }
+    
     setLoading(true);
 
-    const formData = new FormData();
-    formData.append('title', title);
-    formData.append('content', content);
-    formData.append('category', category);
-    formData.append('priority', priority);
-    formData.append('is_anonymous', isAnonymous);
-    selectedTags.forEach(tag => formData.append('tags', tag));
-    if (file) {
-      formData.append('attachment', file);
-    }
-
     try {
-      await createFeedback(formData);
-      navigate('/feedback');
+      const formPayload = new FormData();
+      Object.keys(formData).forEach(key => {
+        if (formData[key] !== null) {
+          formPayload.append(key, formData[key]);
+        }
+      });
+
+      await feedback.create(formPayload);
+      setSuccess(true);
+      
+      // Reset form after successful submission
+      setFormData({
+        title: '',
+        content: '',
+        category: '',
+        rating: 3,
+        is_anonymous: false,
+        attachment: null
+      });
+      setPreview(null);
+      
+      // Redirect after short delay
+      setTimeout(() => {
+        navigate('/feedback/list');
+      }, 2000);
+      
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to submit feedback');
+      console.error('Error submitting feedback:', err);
+      setSubmitError(err.response?.data?.error || 
+                     err.response?.data?.detail || 
+                     'Failed to submit feedback. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTagSelect = (tagId) => {
-    setSelectedTags(prev =>
-      prev.includes(tagId)
-        ? prev.filter(id => id !== tagId)
-        : [...prev, tagId]
+  if (success) {
+    return (
+      <Paper elevation={3} sx={{ p: 3, maxWidth: 800, mx: 'auto', mt: 4 }}>
+        <Alert severity="success">
+          Feedback submitted successfully! Redirecting...
+        </Alert>
+      </Paper>
     );
-  };
+  }
 
   return (
     <Paper elevation={3} sx={{ p: 3, maxWidth: 800, mx: 'auto', mt: 4 }}>
@@ -125,9 +278,9 @@ const FeedbackForm = () => {
         Submit Feedback
       </Typography>
 
-      {error && (
+      {submitError && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
+          {submitError}
         </Alert>
       )}
 
@@ -138,8 +291,11 @@ const FeedbackForm = () => {
               required
               fullWidth
               label="Title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              name="title"
+              value={formData.title}
+              onChange={handleChange}
+              error={!!errors.title}
+              helperText={errors.title}
             />
           </Grid>
 
@@ -150,59 +306,73 @@ const FeedbackForm = () => {
               multiline
               rows={4}
               label="Content"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
+              name="content"
+              value={formData.content}
+              onChange={handleChange}
+              error={!!errors.content}
+              helperText={errors.content}
             />
           </Grid>
 
           <Grid item xs={12} sm={6}>
-            <FormControl fullWidth>
-              <InputLabel>Category</InputLabel>
+            <FormControl fullWidth error={!!errors.category}>
+              <InputLabel id="category-label">Category</InputLabel>
               <Select
-                value={category}
+                labelId="category-label"
+                id="category"
+                name="category"
+                value={formData.category}
                 label="Category"
-                onChange={(e) => setCategory(e.target.value)}
+                onChange={handleChange}
+                disabled={loadingCategories}
               >
-                {categories.map((cat) => (
-                  <MenuItem key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </MenuItem>
-                ))}
+                {loadingCategories ? (
+                  <MenuItem value="" disabled>Loading categories...</MenuItem>
+                ) : categories && Array.isArray(categories) && categories.length > 0 ? (
+                  categories.map((cat) => (
+                    <MenuItem key={cat.id || cat._id} value={cat.id || cat._id}>
+                      {cat.name}
+                    </MenuItem>
+                  ))
+                ) : (
+                  <MenuItem value="" disabled>No categories available</MenuItem>
+                )}
               </Select>
+              {errors.category && <FormHelperText>{errors.category}</FormHelperText>}
             </FormControl>
           </Grid>
 
           <Grid item xs={12} sm={6}>
             <FormControl fullWidth>
-              <InputLabel>Priority</InputLabel>
+              <InputLabel id="rating-label">Rating</InputLabel>
               <Select
-                value={priority}
-                label="Priority"
-                onChange={(e) => setPriority(e.target.value)}
+                labelId="rating-label"
+                id="rating"
+                name="rating"
+                value={formData.rating}
+                label="Rating"
+                onChange={handleChange}
               >
-                <MenuItem value="low">Low</MenuItem>
-                <MenuItem value="medium">Medium</MenuItem>
-                <MenuItem value="high">High</MenuItem>
-                <MenuItem value="urgent">Urgent</MenuItem>
+                <MenuItem value={1}>1 - Poor</MenuItem>
+                <MenuItem value={2}>2 - Below Average</MenuItem>
+                <MenuItem value={3}>3 - Average</MenuItem>
+                <MenuItem value={4}>4 - Good</MenuItem>
+                <MenuItem value={5}>5 - Excellent</MenuItem>
               </Select>
             </FormControl>
           </Grid>
 
           <Grid item xs={12}>
-            <Typography variant="subtitle1" gutterBottom>
-              Tags
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-              {tags.map((tag) => (
-                <Chip
-                  key={tag.id}
-                  label={tag.name}
-                  onClick={() => handleTagSelect(tag.id)}
-                  color={selectedTags.includes(tag.id) ? 'primary' : 'default'}
-                  sx={{ backgroundColor: tag.color }}
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={formData.is_anonymous}
+                  onChange={handleChange}
+                  name="is_anonymous"
                 />
-              ))}
-            </Box>
+              }
+              label="Submit anonymously"
+            />
           </Grid>
 
           <Grid item xs={12}>
@@ -220,10 +390,10 @@ const FeedbackForm = () => {
                   onChange={handleFileChange}
                 />
               </Button>
-              {file && (
+              {formData.attachment && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Typography variant="body2">
-                    {file.name}
+                    {formData.attachment.name}
                   </Typography>
                   <IconButton
                     size="small"
@@ -235,6 +405,9 @@ const FeedbackForm = () => {
                 </Box>
               )}
             </Box>
+            {errors.attachment && (
+              <FormHelperText error>{errors.attachment}</FormHelperText>
+            )}
             {preview && (
               <Box sx={{ mt: 2 }}>
                 <img
@@ -249,9 +422,11 @@ const FeedbackForm = () => {
           <Grid item xs={12}>
             <Button
               type="submit"
-              variant="contained"
               fullWidth
+              variant="contained"
+              color="primary"
               disabled={loading}
+              sx={{ mt: 2 }}
             >
               {loading ? <CircularProgress size={24} /> : 'Submit Feedback'}
             </Button>

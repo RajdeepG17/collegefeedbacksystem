@@ -50,24 +50,13 @@ class UserRegistrationView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Validate password strength
-        password = serializer.validated_data.get('password')
-        if not validate_password_strength(password):
-            return Response(
-                {'error': 'Password does not meet strength requirements'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
         # Create user
         user = serializer.save()
         
         # Generate tokens
         refresh = RefreshToken.for_user(user)
         
-        log_security_event('user_registration', {
-            'user_id': user.id,
-            'email': user.email
-        })
+        logger.info(f"User registered successfully: {user.email}")
 
         return Response({
             'refresh': str(refresh),
@@ -110,18 +99,13 @@ class PasswordResetView(generics.CreateAPIView):
         email = serializer.validated_data['email']
         try:
             user = User.objects.get(email=email)
-            # Generate reset token and send email
-            # Implementation depends on your email service
-            log_security_event('password_reset_request', {
-                'user_id': user.id,
-                'email': user.email
-            })
+            logger.info(f"Password reset requested for {user.email}")
+            # In a real application, you would send an email here
             return Response({'message': 'Password reset email sent'})
         except User.DoesNotExist:
-            return Response(
-                {'error': 'No user found with this email'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            logger.warning(f"Password reset attempted for non-existent email: {email}")
+            # For security reasons, don't expose that the user doesn't exist
+            return Response({'message': 'Password reset email sent'})
 
 class PasswordResetConfirmView(generics.GenericAPIView):
     """View for confirming password reset"""
@@ -151,13 +135,15 @@ class LogoutView(APIView):
     permission_classes = (permissions.IsAuthenticated,)
 
     def post(self, request, *args, **kwargs):
-        # Add token to blacklist if using JWT
         try:
-            refresh_token = request.data["refresh_token"]
-            token = RefreshToken(refresh_token)
-            token.blacklist()
+            refresh_token = request.data.get("refresh_token")
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            logger.info(f"User logged out: {request.user.email}")
             return Response({'detail': 'Successfully logged out.'}, status=status.HTTP_200_OK)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Logout error: {str(e)}")
             return Response({'detail': 'Invalid token.'}, status=status.HTTP_400_BAD_REQUEST)
 
 class UserLoginView(generics.CreateAPIView):
@@ -174,20 +160,14 @@ class UserLoginView(generics.CreateAPIView):
         try:
             user = User.objects.get(email=email)
             if not user.check_password(password):
-                track_login_attempt(email, False)
-                remaining = get_remaining_attempts(email)
+                logger.warning(f"Failed login attempt for user: {email}")
                 return Response(
-                    {'error': 'Invalid credentials', 'remaining_attempts': remaining},
+                    {'error': 'Invalid credentials'},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
 
-            track_login_attempt(email, True)
             refresh = RefreshToken.for_user(user)
-
-            log_security_event('user_login', {
-                'user_id': user.id,
-                'email': user.email
-            })
+            logger.info(f"User logged in successfully: {email}")
 
             return Response({
                 'refresh': str(refresh),
@@ -197,15 +177,13 @@ class UserLoginView(generics.CreateAPIView):
                     'email': user.email,
                     'first_name': user.first_name,
                     'last_name': user.last_name,
-                    'role': user.profile.role if hasattr(user, 'profile') else None
+                    'user_type': user.user_type
                 }
-            })
-
+            }, status=status.HTTP_200_OK)
         except User.DoesNotExist:
-            track_login_attempt(email, False)
-            remaining = get_remaining_attempts(email)
+            logger.warning(f"Login attempt with non-existent email: {email}")
             return Response(
-                {'error': 'Invalid credentials', 'remaining_attempts': remaining},
+                {'error': 'Invalid credentials'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
@@ -217,69 +195,113 @@ class PasswordChangeView(generics.UpdateAPIView):
         return self.request.user
 
     def update(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
         user = self.get_object()
-        if not user.check_password(serializer.validated_data['old_password']):
-            return Response(
-                {'error': 'Invalid old password'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        new_password = serializer.validated_data['new_password']
-        if not validate_password_strength(new_password):
-            return Response(
-                {'error': 'New password does not meet strength requirements'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        user.set_password(new_password)
-        user.save()
-
-        log_security_event('password_change', {
-            'user_id': user.id,
-            'email': user.email
-        })
-
-        return Response({'message': 'Password changed successfully'})
+        serializer = self.get_serializer(data=request.data)
+        
+        if serializer.is_valid():
+            # Check old password
+            old_password = serializer.validated_data.get('old_password')
+            if not user.check_password(old_password):
+                return Response(
+                    {'old_password': 'Wrong password.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Set new password
+            user.set_password(serializer.validated_data.get('new_password'))
+            user.save()
+            
+            # Update token
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'status': 'success',
+                'detail': 'Password updated successfully',
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            })
+            
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class RegisterView(generics.CreateAPIView):
     """
     View for user registration with security enhancements
     """
+    permission_classes = [AllowAny]
+    serializer_class = UserRegistrationSerializer
+    
     def post(self, request):
         try:
             # Sanitize input
             data = sanitize_input(request.data)
             
+            # Check if user already exists and can log in
+            email = data.get('email', '')
+            password = data.get('password', '')
+            
+            if User.objects.filter(email=email).exists():
+                # The user already exists, try to authenticate
+                user = authenticate(username=email, password=password)
+                
+                if user and user.is_active:
+                    # The user exists and can log in with these credentials
+                    # This means they're trying to register an account that already exists
+                    # and they know the password - so we can just return a success
+                    refresh = RefreshToken.for_user(user)
+                    
+                    logger.info(
+                        "existing_user_registration_success",
+                        extra={"email": email}
+                    )
+                    
+                    # Return success response as if the user was just created
+                    return Response({
+                        'refresh': str(refresh),
+                        'access': str(refresh.access_token),
+                        'user': UserProfileSerializer(user).data,
+                        'message': 'You already have an account with these credentials. Login successful.'
+                    }, status=status.HTTP_200_OK)
+            
             # Validate password strength
             try:
-                validate_password_strength(data.get('password', ''))
+                validate_password_strength(password)
             except ValidationError as e:
                 return Response(
                     {'error': str(e)},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Your registration logic here
-            # ...
-
-            logger.info(
-                "registration_successful",
-                email=data.get('email')
-            )
-            
-            return Response(
-                {'message': 'Registration successful'},
-                status=status.HTTP_201_CREATED
-            )
+            # Process registration
+            serializer = UserRegistrationSerializer(data=data)
+            if serializer.is_valid():
+                user = serializer.save()
+                refresh = RefreshToken.for_user(user)
+                
+                logger.info(
+                    "registration_successful",
+                    extra={"email": data.get('email')}
+                )
+                
+                return Response({
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': serializer.data,
+                    'message': 'Registration successful'
+                }, status=status.HTTP_201_CREATED)
+            else:
+                logger.warning(
+                    "registration_validation_failed",
+                    extra={"errors": str(serializer.errors)}
+                )
+                return Response(
+                    serializer.errors,
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         except Exception as e:
             logger.error(
                 "registration_error",
-                error=str(e),
-                exc_info=True
+                extra={"error": str(e)}
             )
             return Response(
                 {'error': 'An error occurred during registration'},
@@ -400,3 +422,58 @@ class UserListView(generics.ListAPIView):
         if user_type:
             queryset = queryset.filter(user_type=user_type)
         return queryset
+
+# Add a simple login view with AllowAny permission
+class SimpleLoginView(APIView):
+    """Simple login view that works with both username and email"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request, *args, **kwargs):
+        # Get credentials from request
+        email = request.data.get('email') or request.data.get('username')
+        password = request.data.get('password')
+        
+        if not email or not password:
+            return Response(
+                {'error': 'Please provide both email/username and password'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Try to authenticate with both email and username
+        user = None
+        
+        # First try direct authentication
+        user = authenticate(username=email, password=password)
+        
+        # If not found, try to find by email and authenticate
+        if not user:
+            try:
+                user_obj = User.objects.get(email=email)
+                user = authenticate(username=user_obj.username, password=password)
+            except User.DoesNotExist:
+                pass
+        
+        if user and user.is_active:
+            # Generate token
+            refresh = RefreshToken.for_user(user)
+            access = refresh.access_token
+            
+            # Return success response with token and user data
+            return Response({
+                'access': str(access),
+                'refresh': str(refresh),
+                'user': {
+                    'id': user.id,
+                    'email': user.email,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'user_type': getattr(user, 'user_type', 'student')
+                }
+            })
+        
+        # Return error response
+        return Response(
+            {'error': 'Invalid credentials'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )

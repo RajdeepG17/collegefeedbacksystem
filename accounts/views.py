@@ -19,22 +19,17 @@ class IsAdminUser(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.user_type in ['admin', 'superadmin']
 
-class UserRegistrationView(generics.CreateAPIView):
-    """View for user registration"""
+class UserViewSet(viewsets.ModelViewSet):
+    """ViewSet for user operations"""
     
     queryset = User.objects.all()
-    serializer_class = UserRegistrationSerializer
-    permission_classes = [AllowAny]
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
     
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            return Response({
-                "user": UserSerializer(user, context=self.get_serializer_context()).data,
-                "message": "User created successfully",
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
 class LoginView(APIView):
     """View for user login"""
@@ -43,7 +38,7 @@ class LoginView(APIView):
     
     def post(self, request):
         try:
-            email = request.data.get('email')
+            email = request.data.get('email') or request.data.get('username')
             password = request.data.get('password')
             
             if not email or not password:
@@ -55,13 +50,28 @@ class LoginView(APIView):
             # Use username=email since Django's authenticate expects username
             user = authenticate(username=email, password=password)
             
+            # If not found, try to find by email and authenticate
+            if not user:
+                try:
+                    user_obj = User.objects.get(email=email)
+                    user = authenticate(username=user_obj.username, password=password)
+                except User.DoesNotExist:
+                    pass
+            
             if user is not None and user.is_active:
                 refresh = RefreshToken.for_user(user)
+                
+                # Include all relevant user data in response
                 return Response({
-                    'user': UserSerializer(user).data,
-                    'tokens': {
-                        'refresh': str(refresh),
-                        'access': str(refresh.access_token),
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                    'user': {
+                        'id': user.id,
+                        'email': user.email,
+                        'username': getattr(user, 'username', user.email),
+                        'first_name': getattr(user, 'first_name', ''),
+                        'last_name': getattr(user, 'last_name', ''),
+                        'user_type': getattr(user, 'user_type', 'student')
                     },
                     'message': 'Login successful'
                 })
@@ -83,8 +93,45 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
-        logout(request)
-        return Response({'message': 'Logout successful'})
+        try:
+            refresh_token = request.data.get('refresh_token')
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+                return Response({'message': 'Logout successful'})
+            else:
+                return Response(
+                    {'error': 'Refresh token is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Exception as e:
+            return Response(
+                {'error': f'An error occurred during logout: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class UserRegistrationView(generics.CreateAPIView):
+    """View for user registration"""
+    
+    queryset = User.objects.all()
+    serializer_class = UserRegistrationSerializer
+    permission_classes = [AllowAny]
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            
+            # Generate tokens for the user
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': serializer.data,
+                'message': 'Registration successful'
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class UserViewSet(viewsets.ModelViewSet):
     """ViewSet for user management"""

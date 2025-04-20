@@ -1,5 +1,5 @@
 import React from 'react';
-import PropTypes from 'prop-types';
+import { Box, Alert, Typography, Button } from '@mui/material';
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -8,49 +8,65 @@ class ErrorBoundary extends React.Component {
     }
 
     static getDerivedStateFromError(error) {
-        return { hasError: true };
+        // Update state so the next render will show the fallback UI
+        return { hasError: true, error };
     }
 
     componentDidCatch(error, errorInfo) {
-        this.setState({
-            error: error,
-            errorInfo: errorInfo
-        });
-        // You can also log the error to an error reporting service here
-        console.error('Error caught by ErrorBoundary:', error, errorInfo);
+        // You can log the error to an error reporting service
+        console.error('Error caught by boundary:', error, errorInfo);
+        this.setState({ errorInfo });
+    }
+
+    handleReset = () => {
+        this.setState({ hasError: false, error: null, errorInfo: null });
     }
 
     render() {
         if (this.state.hasError) {
             return (
-                <div className="error-boundary">
-                    <div className="error-boundary-content">
-                        <h2>Something went wrong</h2>
-                        <p>We're sorry, but something went wrong. Please try refreshing the page.</p>
-                        {process.env.NODE_ENV === 'development' && (
-                            <details style={{ whiteSpace: 'pre-wrap' }}>
-                                {this.state.error && this.state.error.toString()}
-                                <br />
-                                {this.state.errorInfo && this.state.errorInfo.componentStack}
-                            </details>
-                        )}
-                        <button 
-                            onClick={() => window.location.reload()}
-                            className="btn btn-primary mt-3"
+                <Box 
+                    sx={{ 
+                        p: 4, 
+                        textAlign: 'center', 
+                        display: 'flex', 
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minHeight: '100vh'
+                    }}
+                >
+                    <Typography variant="h4" gutterBottom>
+                        Something went wrong
+                    </Typography>
+                    
+                    <Alert severity="error" sx={{ mb: 3, maxWidth: 600 }}>
+                        {this.state.error?.message || 'An unexpected error occurred'}
+                    </Alert>
+                    
+                    <Box sx={{ mt: 2 }}>
+                        <Button 
+                            variant="contained" 
+                            onClick={() => window.location.href = '/'}
+                            sx={{ mr: 2 }}
                         >
-                            Refresh Page
-                        </button>
-                    </div>
-                </div>
+                            Go to Home
+                        </Button>
+                        
+                        <Button 
+                            variant="outlined" 
+                            onClick={this.handleReset}
+                        >
+                            Try Again
+                        </Button>
+                    </Box>
+                </Box>
             );
         }
-
+        
+        // If there's no error, render children normally
         return this.props.children;
     }
 }
-
-ErrorBoundary.propTypes = {
-    children: PropTypes.node.isRequired
-};
 
 export default ErrorBoundary; 

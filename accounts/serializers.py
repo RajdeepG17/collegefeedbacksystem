@@ -1,4 +1,3 @@
-
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -12,8 +11,8 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'user_type', 'admin_category', 
                   'student_id', 'department', 'year_of_study', 'profile_picture', 
-                  'phone_number', 'address', 'date_joined', 'full_name']
-        read_only_fields = ['id', 'date_joined', 'full_name']
+                  'phone_number', 'date_joined']
+        read_only_fields = ['id', 'date_joined']
 
 class UserMinimalSerializer(serializers.ModelSerializer):
     """Minimal user information for public display"""

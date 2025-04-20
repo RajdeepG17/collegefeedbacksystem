@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+        .success {
+            color: green;
+            margin-top: 10px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Login API</h1>
+    
+    <div class="form-group">
+        <label for="email">Email/Username:</label>
+        <input type="text" id="email" value="student@example.com">
+    </div>
+    
+    <div class="form-group">
+        <label for="password">Password:</label>
+        <input type="password" id="password" value="student123">
+    </div>
+    
+    <div class="form-group">
+        <label for="endpoint">Endpoint:</label>
+        <select id="endpoint">
+            <option value="http://localhost:8000/api/auth/login/">API Auth Login</option>
+            <option value="http://localhost:8000/accounts/login/">Accounts Login</option>
+        </select>
+    </div>
+    
+    <button id="login-btn">Test Login</button>
+    
+    <div id="result">
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="success" class="success" style="display: none;"></div>
+        <h3>Response:</h3>
+        <pre id="response"></pre>
+    </div>
+    
+    <script>
+        document.getElementById('login-btn').addEventListener('click', async function() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const endpoint = document.getElementById('endpoint').value;
+            
+            const errorEl = document.getElementById('error');
+            const successEl = document.getElementById('success');
+            const responseEl = document.getElementById('response');
+            
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+            responseEl.textContent = 'Loading...';
+            
+            try {
+                // Create the payload with both email and username
+                const payload = {
+                    email: email,
+                    username: email,
+                    password: password
+                };
+                
+                console.log(`Sending request to ${endpoint} with:`, payload);
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    successEl.textContent = 'Login successful!';
+                    successEl.style.display = 'block';
+                    
+                    // Show what tokens were received
+                    let tokenInfo = '';
+                    if (data.access) tokenInfo += `Access token received: ${data.access.substring(0, 20)}...\n`;
+                    if (data.refresh) tokenInfo += `Refresh token received: ${data.refresh.substring(0, 20)}...\n`;
+                    if (data.user) tokenInfo += `User data received: ${JSON.stringify(data.user, null, 2)}\n`;
+                    
+                    responseEl.textContent = JSON.stringify(data, null, 2);
+                    
+                    // Store tokens in local storage for testing frontend
+                    if (data.access) {
+                        localStorage.setItem('token', data.access);
+                        console.log('Access token stored in localStorage');
+                    }
+                    if (data.refresh) {
+                        localStorage.setItem('refresh_token', data.refresh);
+                        console.log('Refresh token stored in localStorage');
+                    }
+                    if (data.user && data.user.user_type) {
+                        localStorage.setItem('user_type', data.user.user_type);
+                        console.log('User type stored in localStorage');
+                    }
+                } else {
+                    errorEl.textContent = `Error: ${data.error || data.detail || 'Unknown error'}`;
+                    errorEl.style.display = 'block';
+                    responseEl.textContent = JSON.stringify(data, null, 2);
+                }
+            } catch (error) {
+                errorEl.textContent = `Network error: ${error.message}`;
+                errorEl.style.display = 'block';
+                responseEl.textContent = error.stack || error.message;
+            }
+        });
+    </script>
+</body>
+</html> 

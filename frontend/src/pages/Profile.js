@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -14,19 +14,39 @@ import {
 import { PhotoCamera } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
+// Add debug component to check auth context
+const AuthDebug = () => {
+  const authContext = useAuth();
+  console.log('Auth Context in Profile:', authContext);
+  return null;
+};
+
 const Profile = () => {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, loading: authLoading } = useAuth();
   const [formData, setFormData] = useState({
-    first_name: user?.first_name || '',
-    last_name: user?.last_name || '',
-    email: user?.email || '',
-    phone_number: user?.phone_number || '',
-    address: user?.address || '',
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone_number: '',
+    address: '',
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+
+  // Update form data when user data is loaded
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+        email: user.email || '',
+        phone_number: user.phone_number || '',
+        address: user.address || '',
+      });
+    }
+  }, [user]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -74,6 +94,7 @@ const Profile = () => {
       await updateProfile(formData);
       setSuccess('Profile updated successfully');
     } catch (error) {
+      console.error('Profile update error:', error);
       setError(error.message || 'Failed to update profile');
     } finally {
       setLoading(false);
@@ -92,14 +113,36 @@ const Profile = () => {
       await updateProfile(formData);
       setSuccess('Profile picture updated successfully');
     } catch (error) {
+      console.error('Profile picture update error:', error);
       setError(error.message || 'Failed to update profile picture');
     } finally {
       setLoading(false);
     }
   };
 
+  // Show loading state while auth is loading
+  if (authLoading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Show message if user is not logged in
+  if (!user) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
+        <Alert severity="warning">
+          You need to be logged in to view your profile. Please log in and try again.
+        </Alert>
+      </Box>
+    );
+  }
+
   return (
     <Box>
+      <AuthDebug />
       <Typography variant="h4" gutterBottom>
         Profile
       </Typography>
@@ -134,7 +177,7 @@ const Profile = () => {
                 </IconButton>
               </label>
               <Typography variant="subtitle1">
-                {user?.user_type?.toUpperCase()}
+                {user?.user_type?.toUpperCase() || 'USER'}
               </Typography>
             </Box>
           </Grid>

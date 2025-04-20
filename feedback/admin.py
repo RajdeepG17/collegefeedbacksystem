@@ -3,8 +3,8 @@ from .models import FeedbackCategory, Feedback, FeedbackResponse, FeedbackTag
 
 @admin.register(FeedbackCategory)
 class FeedbackCategoryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'category_type', 'is_active', 'created_at')
-    list_filter = ('category_type', 'is_active')
+    list_display = ('name', 'active', 'created_at')
+    list_filter = ('active',)
     search_fields = ('name', 'description')
     ordering = ('name',)
 

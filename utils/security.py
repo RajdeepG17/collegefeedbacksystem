@@ -7,17 +7,17 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('college_feedback_system')
 
 def validate_password_strength(password):
     """
     Validate that the password meets minimum security requirements:
-    - At least 8 characters long
+    - At least 6 characters long (simplified for college project)
     - Contains at least one uppercase letter
     - Contains at least one lowercase letter
     - Contains at least one number
     """
-    if len(password) < 8:
+    if len(password) < 6:
         return False
     
     if not re.search(r'[A-Z]', password):
@@ -53,10 +53,10 @@ def validate_file_upload(file, allowed_types=None, max_size=None):
         return False
 
     if max_size is None:
-        max_size = getattr(settings, 'MAX_UPLOAD_SIZE', 5 * 1024 * 1024)  # 5MB default
+        max_size = 10 * 1024 * 1024  # 10MB default
 
     if allowed_types is None:
-        allowed_types = getattr(settings, 'ALLOWED_FILE_TYPES', ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'])
+        allowed_types = ['jpg', 'jpeg', 'png', 'gif']
 
     # Check file size
     if file.size > max_size:

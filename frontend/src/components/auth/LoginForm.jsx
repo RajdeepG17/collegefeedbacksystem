@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button, TextField, Box, Typography, Alert, CircularProgress } from '@mui/material';
-import { login } from '../../services/authService';
+import { auth } from '../../services/api';
 
 const LoginForm = () => {
   const [email, setEmail] = useState('');
@@ -11,7 +11,7 @@ const LoginForm = () => {
   const [loading, setLoading] = useState(false);
   const [remainingAttempts, setRemainingAttempts] = useState(null);
   const navigate = useNavigate();
-  const { setAuth } = useAuth();
+  const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -19,11 +19,20 @@ const LoginForm = () => {
     setLoading(true);
 
     try {
-      const response = await login({ email, password });
-      setAuth(response.data);
+      // Try both email and username fields to handle different backend expectations
+      const userData = {
+        email: email,
+        password: password,
+        username: email  // Some backends expect username field rather than email
+      };
+      
+      console.log('Attempting login with:', {email, password});
+      await login(email, password);
+      console.log('Login successful, redirecting...');
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed');
+      console.error('Login error:', err);
+      setError(err.message || 'Login failed. Please check your credentials and try again.');
       setRemainingAttempts(err.response?.data?.remaining_attempts);
     } finally {
       setLoading(false);

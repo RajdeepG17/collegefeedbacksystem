@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Grid,
@@ -11,14 +11,25 @@ import {
   ListItem,
   ListItemText,
   Chip,
+  Button,
 } from '@mui/material';
 import {
   Feedback as FeedbackIcon,
   CheckCircle as CheckCircleIcon,
   Warning as WarningIcon,
   Error as ErrorIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { useFeedback } from '../context/FeedbackContext';
+
+// Debug component to help identify context issues
+const ContextDebug = () => {
+  const contextValue = useFeedback();
+  
+  console.log('FeedbackContext value:', contextValue);
+  
+  return null; // This component doesn't render anything
+};
 
 const StatusChip = ({ status }) => {
   const getStatusColor = () => {
@@ -64,11 +75,32 @@ const StatusChip = ({ status }) => {
 };
 
 const Dashboard = () => {
+  // Add ContextDebug before accessing the hook values
+  return (
+    <>
+      <ContextDebug />
+      <DashboardContent />
+    </>
+  );
+};
+
+const DashboardContent = () => {
   const { stats, loading, error, fetchDashboardStats } = useFeedback();
+  const [localError, setLocalError] = useState('');
 
   useEffect(() => {
-    fetchDashboardStats();
+    handleFetchStats();
   }, []);
+
+  const handleFetchStats = async () => {
+    try {
+      setLocalError('');
+      await fetchDashboardStats();
+    } catch (err) {
+      console.error('Dashboard fetch error:', err);
+      setLocalError('Unable to load dashboard data. Please try again.');
+    }
+  };
 
   if (loading) {
     return (
@@ -78,19 +110,45 @@ const Dashboard = () => {
     );
   }
 
-  if (error) {
+  const displayError = error || localError;
+  
+  if (displayError) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
-        <Typography color="error">{error}</Typography>
+      <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" minHeight="60vh" gap={2}>
+        <Typography color="error">{displayError}</Typography>
+        <Button 
+          variant="contained" 
+          color="primary" 
+          startIcon={<RefreshIcon />}
+          onClick={handleFetchStats}
+        >
+          Retry
+        </Button>
       </Box>
     );
   }
 
+  // Safely access stats with default empty values
+  const statusCounts = stats?.status_counts || {};
+  const categoryCounts = stats?.category_counts || [];
+  const recentFeedback = stats?.recent || [];
+  const urgentFeedback = stats?.urgent || [];
+
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Dashboard
-      </Typography>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+        <Typography variant="h4" gutterBottom>
+          Dashboard
+        </Typography>
+        <Button 
+          variant="outlined" 
+          startIcon={<RefreshIcon />}
+          onClick={handleFetchStats}
+        >
+          Refresh
+        </Button>
+      </Box>
+      
       <Grid container spacing={3}>
         {/* Status Summary */}
         <Grid item xs={12} md={6}>
@@ -98,9 +156,9 @@ const Dashboard = () => {
             <Typography variant="h6" gutterBottom>
               Feedback Status
             </Typography>
-            <Grid container spacing={2}>
-              {stats?.status_counts &&
-                Object.entries(stats.status_counts).map(([status, count]) => (
+            {Object.keys(statusCounts).length > 0 ? (
+              <Grid container spacing={2}>
+                {Object.entries(statusCounts).map(([status, count]) => (
                   <Grid item xs={6} key={status}>
                     <Card>
                       <CardContent>
@@ -112,7 +170,12 @@ const Dashboard = () => {
                     </Card>
                   </Grid>
                 ))}
-            </Grid>
+              </Grid>
+            ) : (
+              <Typography variant="body1" color="text.secondary">
+                No status data available
+              </Typography>
+            )}
           </Paper>
         </Grid>
 
@@ -122,16 +185,22 @@ const Dashboard = () => {
             <Typography variant="h6" gutterBottom>
               Feedback by Category
             </Typography>
-            <List>
-              {stats?.category_counts?.map((category) => (
-                <ListItem key={category.category__name}>
-                  <ListItemText
-                    primary={category.category__name}
-                    secondary={`${category.count} feedbacks`}
-                  />
-                </ListItem>
-              ))}
-            </List>
+            {categoryCounts.length > 0 ? (
+              <List>
+                {categoryCounts.map((category) => (
+                  <ListItem key={category.category__name || 'unknown'}>
+                    <ListItemText
+                      primary={category.category__name || 'Uncategorized'}
+                      secondary={`${category.count} feedbacks`}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            ) : (
+              <Typography variant="body1" color="text.secondary">
+                No category data available
+              </Typography>
+            )}
           </Paper>
         </Grid>
 
@@ -141,23 +210,29 @@ const Dashboard = () => {
             <Typography variant="h6" gutterBottom>
               Recent Feedback
             </Typography>
-            <List>
-              {stats?.recent?.map((feedback) => (
-                <ListItem key={feedback.id}>
-                  <ListItemText
-                    primary={feedback.title}
-                    secondary={
-                      <Box component="span" sx={{ display: 'flex', gap: 1 }}>
-                        <StatusChip status={feedback.status} />
-                        <Typography variant="body2" color="text.secondary">
-                          {new Date(feedback.created_at).toLocaleDateString()}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                </ListItem>
-              ))}
-            </List>
+            {recentFeedback.length > 0 ? (
+              <List>
+                {recentFeedback.map((feedback) => (
+                  <ListItem key={feedback.id}>
+                    <ListItemText
+                      primary={feedback.title}
+                      secondary={
+                        <Box component="span" sx={{ display: 'flex', gap: 1 }}>
+                          <StatusChip status={feedback.status} />
+                          <Typography variant="body2" color="text.secondary">
+                            {new Date(feedback.created_at).toLocaleDateString()}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            ) : (
+              <Typography variant="body1" color="text.secondary">
+                No recent feedback available
+              </Typography>
+            )}
           </Paper>
         </Grid>
 
@@ -167,23 +242,29 @@ const Dashboard = () => {
             <Typography variant="h6" gutterBottom>
               Urgent Feedback
             </Typography>
-            <List>
-              {stats?.urgent?.map((feedback) => (
-                <ListItem key={feedback.id}>
-                  <ListItemText
-                    primary={feedback.title}
-                    secondary={
-                      <Box component="span" sx={{ display: 'flex', gap: 1 }}>
-                        <StatusChip status={feedback.status} />
-                        <Typography variant="body2" color="text.secondary">
-                          {new Date(feedback.created_at).toLocaleDateString()}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                </ListItem>
-              ))}
-            </List>
+            {urgentFeedback.length > 0 ? (
+              <List>
+                {urgentFeedback.map((feedback) => (
+                  <ListItem key={feedback.id}>
+                    <ListItemText
+                      primary={feedback.title}
+                      secondary={
+                        <Box component="span" sx={{ display: 'flex', gap: 1 }}>
+                          <StatusChip status={feedback.status} />
+                          <Typography variant="body2" color="text.secondary">
+                            {new Date(feedback.created_at).toLocaleDateString()}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            ) : (
+              <Typography variant="body1" color="text.secondary">
+                No urgent feedback available
+              </Typography>
+            )}
           </Paper>
         </Grid>
       </Grid>

@@ -5,6 +5,8 @@ from django.core.exceptions import ValidationError
 import os
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.db.models.signals import post_migrate
+from django.dispatch import receiver
 
 User = get_user_model()
 
@@ -53,8 +55,8 @@ class FeedbackCategory(models.Model):
 
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    category_type = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
-    is_active = models.BooleanField(default=True)
+    icon = models.CharField(max_length=50, blank=True, null=True)
+    active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -87,9 +89,9 @@ class Feedback(models.Model):
     )
 
     title = models.CharField(max_length=200)
-    content = models.TextField()
+    content = models.TextField(default="No content provided")  # Add default value for 'content'
     category = models.ForeignKey(FeedbackCategory, on_delete=models.CASCADE)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, default=1)  # Add default value for 'user'
     rating = models.IntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(5)],
         help_text='Rating from 1 to 5'
@@ -207,3 +209,30 @@ class FeedbackHistory(models.Model):
     
     def __str__(self):
         return f"Status change on {self.feedback.title} by {self.changed_by.email}"
+
+@receiver(post_migrate)
+def create_default_categories(sender, **kwargs):
+    """
+    Create default feedback categories after migration if they don't exist.
+    """
+    if sender.name == 'feedback':
+        from feedback.models import FeedbackCategory
+        
+        # Define default categories
+        default_categories = [
+            {'name': 'Academic', 'description': 'Feedback related to academic matters', 'icon': 'school'},
+            {'name': 'Infrastructure', 'description': 'Feedback related to infrastructure', 'icon': 'building'},
+            {'name': 'Administrative', 'description': 'Feedback related to administrative matters', 'icon': 'admin_panel_settings'},
+            {'name': 'Other', 'description': 'Other types of feedback', 'icon': 'more_horiz'}
+        ]
+        
+        # Create categories if they don't exist
+        for category_data in default_categories:
+            FeedbackCategory.objects.get_or_create(
+                name=category_data['name'],
+                defaults={
+                    'description': category_data['description'],
+                    'icon': category_data['icon'],
+                    'active': True
+                }
+            )

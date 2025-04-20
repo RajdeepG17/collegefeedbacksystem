@@ -1,17 +1,21 @@
 import logging
-import structlog
+import json
 
-# Configure structlog
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer(),
-    ],
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-    wrapper_class=structlog.BoundLogger,
-    cache_logger_on_first_use=True,
-)
+# Configure the logger for the college feedback system
+logger = logging.getLogger('college_feedback_system')
 
-# Create logger
-logger = structlog.get_logger(__name__) 
+def log_info(message, **kwargs):
+    """Log info level message"""
+    logger.info(message, extra=kwargs)
+
+def log_warning(message, **kwargs):
+    """Log warning level message"""
+    logger.warning(message, extra=kwargs)
+
+def log_error(message, **kwargs):
+    """Log error level message"""
+    logger.error(message, extra=kwargs)
+
+def log_exception(message, exc=None, **kwargs):
+    """Log exception with traceback"""
+    logger.exception(message, exc_info=exc, extra=kwargs) 

@@ -33,6 +33,8 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError('The Email field must be set')
         email = self.normalize_email(email)
+        # Set username to email for compatibility with default auth
+        extra_fields['username'] = email
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -58,18 +60,18 @@ class User(AbstractUser):
         ('admin', 'Admin'),
     )
 
-    username = None
+    username = models.CharField(_('username'), max_length=150, blank=True)
     email = models.EmailField(_('email address'), unique=True)
     user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default='student')
     profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)
-    bio = models.TextField(max_length=500, blank=True)
+    bio = models.TextField(blank=True, null=True)
     date_joined = models.DateTimeField(auto_now_add=True)
-    last_login = models.DateTimeField(auto_now=True)
+    last_login = models.DateTimeField(auto_now=True, null=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    department = models.CharField(max_length=100, blank=True)
-    phone_number = models.CharField(max_length=15, blank=True)
-    student_id = models.CharField(max_length=8, validators=[validate_student_id], blank=True)
+    department = models.CharField(max_length=100, blank=True, null=True)
+    phone_number = models.CharField(max_length=15, blank=True, null=True)
+    student_id = models.CharField(max_length=8, validators=[validate_student_id], blank=True, null=True)
     year_of_study = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)], blank=True, null=True)
     admin_category = models.CharField(max_length=20, choices=(
         ('academic', 'Academic'),
@@ -79,6 +81,8 @@ class User(AbstractUser):
         ('none', 'None'),
     ), default='none')
     is_staff_member = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True)
 
     objects = UserManager()
 
