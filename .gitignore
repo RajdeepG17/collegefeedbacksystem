@@ -48,4 +48,19 @@ yarn-error.log*
 
 # OS
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Additional ignore patterns
+test_*.py
+!tests/**/*.py
+!*/tests/*.py
+!**/tests.py
+**/__pycache__/
+logs/
+.vscode/
+.env
+build/
+*.pyc
+test-*.js
+
+# ... existing code ... 

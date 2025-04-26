@@ -13,13 +13,13 @@ class NotificationService:
             if users is None:
                 # Default users to notify
                 users = set()
-                users.add(feedback.author)
+                users.add(feedback.submitter)
                 if feedback.assigned_to:
                     users.add(feedback.assigned_to)
                 # Add department heads if department is specified
-                if feedback.department:
+                if hasattr(feedback, 'department') and feedback.department:
                     department_users = User.objects.filter(
-                        Q(role='department_head') & 
+                        Q(user_type='admin') & 
                         Q(department=feedback.department)
                     )
                     users.update(department_users)
@@ -108,7 +108,7 @@ class NotificationService:
         
         return Notification.objects.filter(query).select_related(
             'feedback',
-            'feedback__author',
+            'feedback__submitter',
             'feedback__assigned_to'
         )
 

@@ -56,8 +56,8 @@ class FeedbackViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination
     throttle_classes = [UserRateThrottle]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['title', 'description']
-    ordering_fields = ['created_at', 'updated_at', 'status', 'priority']
+    search_fields = ['title', 'content']
+    ordering_fields = ['created_at', 'updated_at', 'status']
     ordering = ['-created_at']
     
     def get_serializer_class(self):
@@ -153,11 +153,6 @@ class FeedbackViewSet(viewsets.ModelViewSet):
                     for status in dict(Feedback.STATUS_CHOICES).keys()
                 }
                 
-                priority_counts = {
-                    priority: queryset.filter(priority=priority).count()
-                    for priority in dict(Feedback.PRIORITY_CHOICES).keys()
-                }
-                
                 category_counts = queryset.values('category__name').annotate(
                     count=Count('id')
                 ).order_by('-count')
@@ -165,15 +160,10 @@ class FeedbackViewSet(viewsets.ModelViewSet):
                 recent = queryset.order_by('-created_at')[:5]
                 recent_serializer = FeedbackListSerializer(recent, many=True)
                 
-                urgent = queryset.filter(priority='urgent', status__in=['pending', 'in_progress'])
-                urgent_serializer = FeedbackListSerializer(urgent, many=True)
-                
                 stats = {
                     'status_counts': status_counts,
-                    'priority_counts': priority_counts,
                     'category_counts': list(category_counts),
                     'recent': recent_serializer.data,
-                    'urgent': urgent_serializer.data,
                     'total': queryset.count(),
                 }
                 
@@ -461,11 +451,6 @@ class AdminDashboardViewSet(viewsets.ViewSet):
                 count=Count('id')
             )
 
-            # Get feedback by priority with optimization
-            priority_counts = base_qs.values('priority').annotate(
-                count=Count('id')
-            )
-
             # Get recent feedback with optimization
             recent_feedback = base_qs.order_by('-created_at')[:5]
 
@@ -521,7 +506,6 @@ class AdminDashboardViewSet(viewsets.ViewSet):
 
             stats = {
                 'status_counts': status_counts,
-                'priority_counts': priority_counts,
                 'recent_feedback': FeedbackSerializer(recent_feedback, many=True).data,
                 'feedback_trends': feedback_trends,
                 'department_stats': department_stats,
@@ -552,7 +536,7 @@ class AdminDashboardViewSet(viewsets.ViewSet):
         try:
             notifications = Notification.objects.select_related(
                 'feedback',
-                'feedback__author',
+                'feedback__submitter',
                 'feedback__assigned_to'
             ).order_by('-created_at')[:50]
 

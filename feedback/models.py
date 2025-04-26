@@ -89,18 +89,21 @@ class Feedback(models.Model):
     )
 
     title = models.CharField(max_length=200)
-    content = models.TextField(default="No content provided")  # Add default value for 'content'
+    content = models.TextField(default="No content provided")
     category = models.ForeignKey(FeedbackCategory, on_delete=models.CASCADE)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, default=1)  # Add default value for 'user'
+    submitter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='submitted_feedbacks')
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assigned_feedbacks', null=True, blank=True)
     rating = models.IntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(5)],
-        help_text='Rating from 1 to 5'
+        help_text='Rating from 1 to 5',
+        null=True, 
+        blank=True
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    is_anonymous = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    attachment = models.FileField(upload_to='feedback_attachments/', null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    attachment = models.FileField(upload_to=feedback_attachment_path, null=True, blank=True, validators=[validate_file_type])
 
     class Meta:
         ordering = ['-created_at']
@@ -108,7 +111,13 @@ class Feedback(models.Model):
         verbose_name_plural = 'Feedbacks'
 
     def __str__(self):
-        return f"{self.title} - {self.user.email}"
+        return f"{self.title} - {self.submitter.email}"
+        
+    @property
+    def days_open(self):
+        if self.resolved_at:
+            return (self.resolved_at - self.created_at).days
+        return (timezone.now() - self.created_at).days
 
 class FeedbackResponse(models.Model):
     feedback = models.ForeignKey(Feedback, on_delete=models.CASCADE, related_name='responses')

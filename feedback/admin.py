@@ -10,9 +10,9 @@ class FeedbackCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Feedback)
 class FeedbackAdmin(admin.ModelAdmin):
-    list_display = ('title', 'category', 'user', 'status', 'rating', 'created_at')
-    list_filter = ('status', 'category', 'rating', 'is_anonymous')
-    search_fields = ('title', 'content', 'user__email')
+    list_display = ('title', 'category', 'submitter', 'status', 'rating', 'created_at')
+    list_filter = ('status', 'category', 'rating')
+    search_fields = ('title', 'content', 'submitter__email')
     ordering = ('-created_at',)
     readonly_fields = ('created_at', 'updated_at')
 

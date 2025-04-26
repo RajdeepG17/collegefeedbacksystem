@@ -29,15 +29,13 @@ class FeedbackListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Feedback
         fields = [
-            'id', 'title', 'description', 'category', 'submitter',
-            'assigned_to', 'status', 'priority', 'created_at',
+            'id', 'title', 'content', 'category', 'submitter',
+            'assigned_to', 'status', 'created_at',
             'updated_at', 'resolved_at', 'days_open', 'rating'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'resolved_at']
     
     def get_submitter(self, obj):
-        if obj.is_anonymous:
-            return 'Anonymous'
         return {
             'id': obj.submitter.id,
             'email': obj.submitter.email,
@@ -59,18 +57,18 @@ class FeedbackListSerializer(serializers.ModelSerializer):
 class FeedbackCommentSerializer(serializers.ModelSerializer):
     """Serializer for feedback comments"""
     
-    user = UserMinimalSerializer(read_only=True)
-    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    author = UserMinimalSerializer(read_only=True)
+    author_name = serializers.CharField(source='author.get_full_name', read_only=True)
     
     class Meta:
         model = FeedbackComment
-        fields = ['id', 'feedback', 'user', 'user_name', 'comment', 'created_at', 
+        fields = ['id', 'feedback', 'author', 'author_name', 'comment', 'created_at', 
                   'updated_at', 'attachment', 'is_internal']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'user']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'author']
         
     def create(self, validated_data):
-        # Set the user to the current user
-        validated_data['user'] = self.context['request'].user
+        # Set the author to the current user
+        validated_data['author'] = self.context['request'].user
         return super().create(validated_data)
 
 class FeedbackHistorySerializer(serializers.ModelSerializer):
@@ -119,18 +117,13 @@ class FeedbackCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Feedback
         fields = [
-            'title', 'description', 'category', 'priority',
-            'is_anonymous', 'attachment'
+            'title', 'content', 'category',
+            'attachment', 'rating'
         ]
     
     def validate_category(self, value):
         if not value.active:
             raise serializers.ValidationError("This category is not active")
-        return value
-    
-    def validate_priority(self, value):
-        if value not in dict(Feedback.PRIORITY_CHOICES):
-            raise serializers.ValidationError("Invalid priority level")
         return value
 
 class FeedbackUpdateSerializer(serializers.ModelSerializer):
@@ -139,19 +132,14 @@ class FeedbackUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Feedback
         fields = [
-            'title', 'description', 'category', 'assigned_to',
-            'status', 'priority', 'is_anonymous', 'attachment'
+            'title', 'content', 'category', 'assigned_to',
+            'status', 'attachment', 'rating'
         ]
         read_only_fields = ['submitter']
     
     def validate_status(self, value):
         if value not in dict(Feedback.STATUS_CHOICES):
             raise serializers.ValidationError("Invalid status")
-        return value
-    
-    def validate_priority(self, value):
-        if value not in dict(Feedback.PRIORITY_CHOICES):
-            raise serializers.ValidationError("Invalid priority level")
         return value
     
     def validate_category(self, value):
@@ -162,22 +150,17 @@ class FeedbackUpdateSerializer(serializers.ModelSerializer):
 class NotificationSerializer(serializers.ModelSerializer):
     feedback_title = serializers.CharField(source='feedback.title', read_only=True)
     feedback_status = serializers.CharField(source='feedback.status', read_only=True)
-    feedback_priority = serializers.CharField(source='feedback.priority', read_only=True)
 
     class Meta:
         model = Notification
         fields = [
             'id', 'notification_type', 'message', 'is_read',
-            'created_at', 'feedback_title', 'feedback_status',
-            'feedback_priority'
+            'created_at', 'feedback_title', 'feedback_status'
         ]
         read_only_fields = ['id', 'created_at']
 
 class DashboardStatsSerializer(serializers.Serializer):
     status_counts = serializers.DictField(
-        child=serializers.IntegerField()
-    )
-    priority_counts = serializers.DictField(
         child=serializers.IntegerField()
     )
     category_counts = serializers.ListField(
@@ -190,7 +173,7 @@ class DashboardStatsSerializer(serializers.Serializer):
     total = serializers.IntegerField()
 
 class FeedbackSerializer(serializers.ModelSerializer):
-    submitted_by_name = serializers.CharField(source='submitted_by.get_full_name', read_only=True)
+    submitter_name = serializers.CharField(source='submitter.get_full_name', read_only=True)
     assigned_to_name = serializers.CharField(source='assigned_to.get_full_name', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
     comments = FeedbackCommentSerializer(many=True, read_only=True)
@@ -198,13 +181,13 @@ class FeedbackSerializer(serializers.ModelSerializer):
     class Meta:
         model = Feedback
         fields = [
-            'id', 'title', 'description', 'category', 'category_name',
-            'submitted_by', 'submitted_by_name', 'assigned_to', 'assigned_to_name',
-            'department', 'priority', 'status', 'attachment', 'created_at',
+            'id', 'title', 'content', 'category', 'category_name',
+            'submitter', 'submitter_name', 'assigned_to', 'assigned_to_name',
+            'rating', 'status', 'attachment', 'created_at',
             'updated_at', 'comments'
         ]
-        read_only_fields = ['submitted_by']
+        read_only_fields = ['submitter']
 
     def create(self, validated_data):
-        validated_data['submitted_by'] = self.context['request'].user
+        validated_data['submitter'] = self.context['request'].user
         return super().create(validated_data)

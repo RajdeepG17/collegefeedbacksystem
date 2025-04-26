@@ -38,6 +38,15 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
+# Error handling settings
+ERROR_HANDLING = {
+    'ENABLE_LOGGING': True,
+    'LOG_LEVEL': 'ERROR',
+    'SEND_EMAIL_NOTIFICATIONS': False,
+}
+
+# API rate limiting
+API_RATE_LIMIT = 60  # requests per minute
 
 # Application definition
 
@@ -70,9 +79,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # Commenting out potentially problematic middleware
-    # 'college_feedback_system.middleware.security.BasicSecurityMiddleware',
-    # 'college_feedback_system.middleware.error_handling.ErrorHandlingMiddleware',
+    'college_feedback_system.middleware.security.BasicSecurityMiddleware',
+    'college_feedback_system.middleware.error_handling.ErrorHandlingMiddleware',
 ]
 
 ROOT_URLCONF = 'college_feedback_system.urls'
@@ -158,8 +166,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    # Commenting out custom exception handler
-    # 'EXCEPTION_HANDLER': 'college_feedback_system.middleware.error_handling.custom_exception_handler',
+    'EXCEPTION_HANDLER': 'college_feedback_system.middleware.error_handling.custom_exception_handler',
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle'

@@ -23,14 +23,19 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { feedback } from '../../services/api';
 
+// Debug helper function
+const debugLog = (message, data) => {
+  console.log(`DEBUG [${new Date().toISOString()}]: ${message}`, data || '');
+};
+
 const FeedbackForm = () => {
   const [formData, setFormData] = useState({
     title: '',
-    content: '',
+    description: '',
     category: '',
-    rating: 3,
-    is_anonymous: false,
-    attachment: null
+    attachment: null,
+    content: '',
+    rating: 5
   });
   const [errors, setErrors] = useState({});
   const [preview, setPreview] = useState(null);
@@ -47,7 +52,7 @@ const FeedbackForm = () => {
     const fetchCategories = async () => {
       try {
         setLoadingCategories(true);
-        console.log('Fetching feedback categories...');
+        debugLog('Fetching feedback categories...');
         
         // Try multiple approaches to fetch categories
         let categoriesData = [];
@@ -55,17 +60,17 @@ const FeedbackForm = () => {
         
         // Approach 1: Using feedback service
         try {
-          console.log('Approach 1: Using feedback.getCategories()');
+          debugLog('Approach 1: Using feedback.getCategories()');
           const response = await feedback.getCategories();
-          console.log('Categories response from service:', response.data);
+          debugLog('Categories response from service:', response.data);
           
           if (response.data && Array.isArray(response.data)) {
             categoriesData = response.data;
-            console.log('Successfully fetched categories using service:', categoriesData);
+            debugLog('Successfully fetched categories using service:', categoriesData);
           } else if (response.data && response.data.results && Array.isArray(response.data.results)) {
             // Handle paginated response
             categoriesData = response.data.results;
-            console.log('Successfully fetched paginated categories:', categoriesData);
+            debugLog('Successfully fetched paginated categories:', categoriesData);
           }
         } catch (serviceError) {
           console.error('Error fetching categories with service:', serviceError);
@@ -130,23 +135,32 @@ const FeedbackForm = () => {
     if (!formData.title.trim()) {
       newErrors.title = 'Title is required';
     }
-    if (!formData.content.trim()) {
-      newErrors.content = 'Content is required';
+    if (!formData.description.trim()) {
+      newErrors.description = 'Description is required';
     }
     if (!formData.category) {
       newErrors.category = 'Category is required';
     }
-    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleChange = (e) => {
     const { name, value, checked, type } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value
-    });
+    
+    // Set both description and content fields when description changes
+    if (name === 'description') {
+      setFormData({
+        ...formData,
+        description: value,
+        content: value // Keep content and description in sync
+      });
+    } else {
+      setFormData({
+        ...formData,
+        [name]: type === 'checkbox' ? checked : value
+      });
+    }
     
     // Clear error for this field
     if (errors[name]) {
@@ -217,46 +231,107 @@ const FeedbackForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError('');
+    debugLog('Submit button clicked, starting form validation');
     
     // Validate form
     if (!validateForm()) {
+      debugLog('Form validation failed', errors);
       return;
     }
     
     setLoading(true);
+    debugLog('Form validation passed, preparing data for submission');
 
     try {
       const formPayload = new FormData();
-      Object.keys(formData).forEach(key => {
-        if (formData[key] !== null) {
-          formPayload.append(key, formData[key]);
-        }
-      });
+      
+      // Map frontend fields to backend fields based on the updated serializer fields
+      formPayload.append('title', formData.title);
+      formPayload.append('content', formData.description);
+      formPayload.append('category', formData.category);
+      formPayload.append('rating', formData.rating || 5); // Default to 5 if not set
+      
+      // Add attachment if present
+      if (formData.attachment) {
+        debugLog('Adding attachment to form data', {
+          name: formData.attachment.name,
+          size: formData.attachment.size,
+          type: formData.attachment.type
+        });
+        formPayload.append('attachment', formData.attachment);
+      }
 
-      await feedback.create(formPayload);
-      setSuccess(true);
+      // Log all form data fields for debugging
+      const formDataLog = {};
+      for (let [key, value] of formPayload.entries()) {
+        formDataLog[key] = value instanceof File ? 
+          `File: ${value.name} (${value.size} bytes)` : value;
+      }
+      debugLog('Submitting feedback with payload', formDataLog);
       
-      // Reset form after successful submission
-      setFormData({
-        title: '',
-        content: '',
-        category: '',
-        rating: 3,
-        is_anonymous: false,
-        attachment: null
-      });
-      setPreview(null);
-      
-      // Redirect after short delay
-      setTimeout(() => {
-        navigate('/feedback/list');
-      }, 2000);
+      try {
+        debugLog('Sending API request to create feedback');
+        const response = await feedback.create(formPayload);
+        debugLog('Feedback creation successful', response.data);
+        setSuccess(true);
+        
+        // Reset form after successful submission
+        setFormData({
+          title: '',
+          description: '',
+          category: '',
+          attachment: null,
+          content: '',
+          rating: 5
+        });
+        setPreview(null);
+        
+        debugLog('Form reset, redirecting in 2 seconds');
+        // Redirect after short delay
+        setTimeout(() => {
+          navigate('/feedback/list');
+        }, 2000);
+      } catch (submitError) {
+        debugLog('Error submitting feedback', {
+          status: submitError.response?.status,
+          data: submitError.response?.data,
+          message: submitError.message
+        });
+        throw submitError;
+      }
       
     } catch (err) {
       console.error('Error submitting feedback:', err);
-      setSubmitError(err.response?.data?.error || 
-                     err.response?.data?.detail || 
-                     'Failed to submit feedback. Please try again.');
+      debugLog('Setting error message for user', err.response?.data);
+      
+      // More detailed error message - display specific validation errors if available
+      let errorMessage = 'Failed to submit feedback. Please try again.';
+      
+      if (err.response?.data) {
+        if (typeof err.response.data === 'string') {
+          errorMessage = err.response.data;
+        } else if (err.response.data.error) {
+          errorMessage = err.response.data.error;
+        } else if (err.response.data.detail) {
+          errorMessage = err.response.data.detail;
+        } else if (err.response.data.message) {
+          errorMessage = err.response.data.message;
+        } else {
+          // Check for validation errors in fields
+          const fieldErrors = [];
+          for (const field in err.response.data) {
+            if (Array.isArray(err.response.data[field])) {
+              fieldErrors.push(`${field}: ${err.response.data[field].join(', ')}`);
+            }
+          }
+          
+          if (fieldErrors.length > 0) {
+            errorMessage = `Validation errors: ${fieldErrors.join('; ')}`;
+          }
+        }
+      }
+      
+      setSubmitError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -305,12 +380,12 @@ const FeedbackForm = () => {
               fullWidth
               multiline
               rows={4}
-              label="Content"
-              name="content"
-              value={formData.content}
+              label="Description"
+              name="description"
+              value={formData.description}
               onChange={handleChange}
-              error={!!errors.content}
-              helperText={errors.content}
+              error={!!errors.description}
+              helperText={errors.description}
             />
           </Grid>
 
@@ -340,39 +415,6 @@ const FeedbackForm = () => {
               </Select>
               {errors.category && <FormHelperText>{errors.category}</FormHelperText>}
             </FormControl>
-          </Grid>
-
-          <Grid item xs={12} sm={6}>
-            <FormControl fullWidth>
-              <InputLabel id="rating-label">Rating</InputLabel>
-              <Select
-                labelId="rating-label"
-                id="rating"
-                name="rating"
-                value={formData.rating}
-                label="Rating"
-                onChange={handleChange}
-              >
-                <MenuItem value={1}>1 - Poor</MenuItem>
-                <MenuItem value={2}>2 - Below Average</MenuItem>
-                <MenuItem value={3}>3 - Average</MenuItem>
-                <MenuItem value={4}>4 - Good</MenuItem>
-                <MenuItem value={5}>5 - Excellent</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-
-          <Grid item xs={12}>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={formData.is_anonymous}
-                  onChange={handleChange}
-                  name="is_anonymous"
-                />
-              }
-              label="Submit anonymously"
-            />
           </Grid>
 
           <Grid item xs={12}>

@@ -257,7 +257,67 @@ export const auth = {
 export const feedback = {
     getAll: (params) => api.get('/feedback/feedbacks/', { params }),
     get: (id) => api.get(`/feedback/feedbacks/${id}/`),
-    create: (data) => api.post('/feedback/feedbacks/', data),
+    create: async (data) => {
+        // Check if data is FormData (for file uploads)
+        const isFormData = data instanceof FormData;
+        
+        // Create request config
+        const config = {
+            // Always add timeout
+            timeout: 15000 // 15 seconds timeout to handle large file uploads
+        };
+        
+        // Set appropriate headers for FormData
+        if (isFormData) {
+            config.headers = {
+                'Content-Type': 'multipart/form-data',
+            };
+            
+            // Log form data entries for debugging
+            console.log('FormData entries:');
+            for (let pair of data.entries()) {
+                console.log(pair[0] + ': ' + (pair[1] instanceof File ? 
+                    `File: ${pair[1].name} (${pair[1].size} bytes)` : 
+                    pair[1]));
+            }
+        } else {
+            console.log('Creating feedback with:', data);
+        }
+        
+        try {
+            // Make the API request with proper config
+            // Use direct axios call to bypass interceptors for upload progress if needed
+            let response;
+            
+            if (isFormData) {
+                console.log('Using direct axios call for FormData submission');
+                response = await axios.post(`${API_URL}/feedback/feedbacks/`, data, {
+                    ...config,
+                    headers: {
+                        ...config.headers,
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+            } else {
+                response = await api.post('/feedback/feedbacks/', data, config);
+            }
+            
+            console.log('Feedback creation successful:', response.data);
+            return response;
+        } catch (error) {
+            console.error('Feedback creation error:', 
+                error.response?.status, 
+                error.response?.statusText,
+                error.response?.data);
+                
+            // Enhanced error logging for network errors
+            if (!error.response) {
+                console.error('Network error or CORS issue:', error.message);
+            }
+            
+            throw error;
+        }
+    },
     update: (id, data) => api.put(`/feedback/feedbacks/${id}/`, data),
     delete: (id) => api.delete(`/feedback/feedbacks/${id}/`),
     getCategories: () => api.get('/feedback/categories/'),
