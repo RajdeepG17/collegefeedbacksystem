@@ -2,7 +2,7 @@
 URL configuration for college_feedback_system project.
 
 The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
+    https://docs.djangoproject.com/en/4.2/topics/http/urls/
 Examples:
 Function views
     1. Add an import:  from my_app import views
@@ -15,17 +15,31 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include, re_path
+from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.views.generic import TemplateView
+from rest_framework.routers import DefaultRouter
+from feedback.api_views import FeedbackViewSet, FeedbackResponseViewSet
+from authentication.api_views import CreateUserView, LoginView, LogoutView
+
+# Create a router for our API viewsets
+router = DefaultRouter()
+router.register(r'feedbacks', FeedbackViewSet, basename='feedback')
+router.register(r'responses', FeedbackResponseViewSet, basename='response')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/auth/', include('authentication.urls')),
-    path('api/feedback/', include('feedback.urls')),
+    
+    # API URLs
+    path('api/', include(router.urls)),
+    path('api/auth/register/', CreateUserView.as_view(), name='register'),
+    path('api/auth/login/', LoginView.as_view(), name='api-login'),
+    path('api/auth/logout/', LogoutView.as_view(), name='api-logout'),
+    
+    # Include existing app URLs
+    path('', include('feedback.urls')),
     path('accounts/', include('accounts.urls')),
-    re_path(r'^.*', TemplateView.as_view(template_name='index.html')),
+    path('auth/', include('authentication.urls')),
 ]
 
 # Serve media files in development

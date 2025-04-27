@@ -1,218 +1,136 @@
 # College Feedback System
 
-A comprehensive feedback management system for educational institutions, built with Django and React. This application enables students, faculty, and staff to submit, track, and manage feedback across various college departments.
+A BCA Final Year Project that enables students to provide feedback to college administration in various categories and allows administrators to view and respond to feedback.
+
+## Project Overview
+
+The College Feedback System is a web-based application designed to streamline the feedback collection process in educational institutions. The system provides:
+
+- **Student Portal**: Submit feedback in three categories: Academic, Infrastructure, and Administrative
+- **Admin Dashboard**: View, manage, and resolve student feedback
+- **Authentication**: Simple login for students and administrators
+- **Responsive Design**: Works on desktops, tablets, and mobile devices
 
 ## Features
 
-- **User Authentication & Authorization**
-  - Role-based access (Students, Faculty, Staff, Admin)
-  - JWT Authentication
-  - Secure password handling with Argon2
-  - User profiles with department association
+### For Students
+- Register and login securely
+- Submit feedback in three categories
+- Optionally upload photos with feedback
+- View submitted feedback and track status
+- Add comments to existing feedback
 
-- **Feedback Management**
-  - Submission with optional anonymity
-  - Department-wise tracking
-  - Category-based organization
-  - Status tracking and resolution workflow
-  - Priority levels (Low, Medium, High, Critical)
-  - File attachment support
+### For Administrators
+- Secure admin login
+- Dashboard with feedback statistics
+- View and respond to assigned feedback
+- Mark feedback as resolved
+- Communicate with students through comments
 
-- **Dashboard & Analytics**
-  - Admin dashboard with feedback insights
-  - Department performance metrics
-  - Resolution time statistics
-  - Category distribution charts
+## Technology Stack
 
-- **Notification System**
-  - Real-time updates on feedback status changes
-  - Email notifications for administrators
-  - User notification center
+- **Frontend**:
+  - HTML5, CSS3
+  - Bootstrap 5 for responsive design
+  - Font Awesome for icons
 
-- **Security Features**
-  - JWT token authentication
-  - CORS protection
-  - Input validation and sanitization
-  - Secure file uploads
-
-## Tech Stack
-
-### Backend
-- **Django 4.2.7** - Python web framework
-- **Django REST Framework 3.14.0** - API development toolkit
-- **JWT Authentication** - Token-based authentication
-- **SQLite** (Development) - Database
-- **Argon2** - Password hashing
-- **Django CORS Headers** - Cross-origin resource sharing
-- **Structured Logging** - Logging system
-
-### Frontend
-- **React 18.2** - JavaScript library for UI
-- **Material-UI 5.15** - React UI framework
-- **React Router 6.22** - Navigation
-- **Axios** - HTTP client
-- **Formik & Yup** - Form handling and validation
-- **TypeScript** - Type safety
+- **Backend**:
+  - Django 4.2 (Python web framework)
+  - SQLite database 
 
 ## Project Structure
 
 ```
-college-feedback-system/
-├── accounts/               # User account management app
-│   ├── models.py           # User, Department, UserProfile models
-│   ├── views.py            # User account views
-│   └── serializers.py      # User serializers
-│
-├── authentication/         # Authentication app
-│   ├── views.py            # Auth views (login, logout, etc.)
-│   └── serializers.py      # Auth serializers
-│
-├── feedback/               # Feedback management app
-│   ├── models.py           # Feedback, Category, Comment models
-│   ├── views.py            # Feedback endpoints
-│   ├── serializers.py      # Feedback serializers
-│   └── services.py         # Business logic
-│
-├── college_feedback_system/  # Main Django project
-│   ├── settings.py         # Project settings
-│   ├── urls.py             # URL declarations
-│   └── middleware/         # Custom middleware
-│
-├── frontend/               # React frontend
-│   ├── public/             # Static files
-│   └── src/                # Source code
-│       ├── components/     # React components
-│       ├── pages/          # Page components
-│       ├── contexts/       # React contexts
-│       ├── services/       # API services
-│       ├── utils/          # Utility functions
-│       └── hooks/          # Custom React hooks
-│
-├── tests/                  # Test suite
-│   ├── unit/               # Unit tests
-│   ├── integration/        # Integration tests
-│   └── functional/         # Functional tests
-│
-├── utils/                  # Utility scripts
-│   ├── db_scripts/         # Database management scripts
-│   └── logging.py          # Logging configuration
-│
-├── media/                  # User uploaded files
-├── staticfiles/            # Static files
-└── templates/              # Django templates
+college_feedback_system/
+├── templates/            # Django HTML templates
+│   ├── accounts/         # User account templates
+│   └── feedback/         # Feedback templates
+├── college_feedback_system/  # Django project settings
+├── accounts/             # User account app
+├── feedback/             # Feedback functionality app
+├── authentication/       # Authentication app
+├── static/               # Static files (CSS, JS)
+├── media/                # User uploaded files
+└── manage.py             # Django project management
 ```
 
-## Prerequisites
+## How to Run the Project
 
-- **Python 3.8+**
-- **Node.js 14+**
-- **npm or yarn**
+### Prerequisites
+- Python 3.8+ and pip
+- Git (optional)
 
-## Installation
+### Installation Steps
+1. Clone the repository or download the project
+   ```
+   git clone https://github.com/yourusername/college_feedback_system.git
+   cd college_feedback_system
+   ```
 
-1. **Clone the repository**
-```bash
-git clone https://github.com/yourusername/college-feedback-system.git
-cd college-feedback-system
-```
+2. Create and activate a virtual environment (optional but recommended)
+   ```
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-2. **Set up the backend**
-```bash
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+3. Install required dependencies
+   ```
+   pip install -r requirements.txt
+   ```
 
-# Install dependencies
-pip install -r requirements.txt
+4. Run migrations to create the database
+   ```
+   python manage.py migrate
+   ```
 
-# Run migrations
-python manage.py migrate
+5. Create an admin user
+   ```
+   python manage.py createsuperuser
+   ```
 
-# Create superuser
-python manage.py createsuperuser
+6. Start the Django development server
+   ```
+   python manage.py runserver
+   ```
 
-# Initialize database with sample data (optional)
-python utils/db_scripts/initialize_db.py
-```
+7. Open your browser and go to `http://localhost:8000`
 
-3. **Set up the frontend**
-```bash
-cd frontend
-npm install
-```
+## Demo Credentials
 
-4. **Start the development servers**
-```bash
-# Backend (in root directory)
-python manage.py runserver
+### Student Login
+- Email: student@example.com
+- Password: student123
 
-# Frontend (in frontend directory)
-npm start
-```
+### Admin Login
+- Email: admin@example.com
+- Password: admin123
 
-## Testing
+## Project Screenshots
 
-The project includes a comprehensive test suite:
+(Screenshots would be inserted here)
 
-```bash
-# Run Django tests
-python manage.py test
+## Features Implemented
 
-# Run specific test module
-python manage.py test tests.unit.test_feedback
+1. **Authentication System**
+   - Single login page for both students and admins
+   - Role-based access control
+   - Simple registration for students
 
-# Run with coverage report
-coverage run --source='.' manage.py test
-coverage report
+2. **Feedback Management**
+   - Three feedback categories: Academic, Infrastructure, Administrative
+   - Optional photo upload with feedback
+   - Status tracking: Pending/Resolved
 
-# Frontend tests
-cd frontend
-npm test
-```
+3. **Admin Features**
+   - View assigned feedback
+   - Mark feedback as resolved
+   - Admin-specific dashboard
 
-## Database Structure
+4. **Student Features**
+   - Submit new feedback
+   - View submitted feedback
+   - Track feedback status
 
-The system uses the following core models:
+---
 
-- **User** - Custom user model with email-based authentication
-- **Department** - Academic and administrative departments
-- **UserProfile** - Extended user information including role and department
-- **FeedbackCategory** - Categories for organizing feedback
-- **Feedback** - Core feedback entries with title, content, and metadata
-- **Comment** - Comments on feedback items for discussion
-
-## API Endpoints
-
-The system provides RESTful API endpoints for all functionality:
-
-- **Authentication**: `/api/auth/` - Login, logout, refresh tokens
-- **Users**: `/api/users/` - User management
-- **Departments**: `/api/departments/` - Department listing and management
-- **Feedback**: `/api/feedback/` - Feedback submission and management
-- **Categories**: `/api/categories/` - Feedback category management
-
-## Deployment
-
-For production deployment:
-
-1. Update `settings.py` with production settings
-2. Set environment variables for sensitive information
-3. Use a production-grade database (PostgreSQL recommended)
-4. Set up static file serving with Nginx or CDN
-5. Configure HTTPS with SSL certificate
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contact
-
-For questions or support, please create an issue in the repository or contact the administrator.
+© 2023 College Feedback System - BCA Final Year Project

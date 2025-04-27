@@ -1,9 +1,9 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
-from django.contrib.auth import get_user_model, authenticate
+from django.contrib.auth import get_user_model, authenticate, login, logout
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
@@ -13,7 +13,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.exceptions import ValidationError
-from utils.security import (
+from college_feedback_system.utils.security import (
     validate_password_strength, 
     sanitize_input, 
     generate_password_reset_token, 
@@ -21,8 +21,8 @@ from utils.security import (
     validate_reset_token,
     log_security_event
 )
-from utils.login_tracker import track_login_attempt, get_remaining_attempts
-from utils.logging import logger
+from college_feedback_system.utils.login_tracker import track_login_attempt, get_remaining_attempts
+from college_feedback_system.utils.logging import logger
 from .serializers import (
     CustomTokenObtainPairSerializer,
     UserRegistrationSerializer,
@@ -33,6 +33,9 @@ from .serializers import (
     UserLoginSerializer,
     PasswordChangeSerializer,
 )
+from .forms import LoginForm
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 
 User = get_user_model()
 
@@ -477,3 +480,139 @@ class SimpleLoginView(APIView):
             {'error': 'Invalid credentials'},
             status=status.HTTP_401_UNAUTHORIZED
         )
+
+def login_view(request):
+    """
+    View for handling user login
+    """
+    # If user is already logged in, redirect to appropriate dashboard
+    if request.user.is_authenticated:
+        if request.user.is_student():
+            return redirect('student_dashboard')
+        else:
+            return redirect('admin_dashboard')
+    
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+        
+        # Authenticate user
+        user = authenticate(request, username=email, password=password)
+        
+        if user is not None:
+            # Log the user in
+            login(request, user)
+            
+            # Redirect based on user type
+            if user.is_student():
+                return redirect('student_dashboard')
+            else:
+                return redirect('admin_dashboard')
+        else:
+            # Authentication failed
+            messages.error(request, 'Invalid email or password')
+    
+    return render(request, 'accounts/login.html')
+
+def register_view(request):
+    """
+    View for student registration
+    """
+    # If user is already logged in, redirect to appropriate dashboard
+    if request.user.is_authenticated:
+        if request.user.is_student():
+            return redirect('student_dashboard')
+        else:
+            return redirect('admin_dashboard')
+    
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        username = request.POST.get('username')
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+        
+        # Check if username or email already exists
+        if User.objects.filter(username=username).exists():
+            messages.error(request, 'Username already exists')
+            return render(request, 'accounts/register.html')
+        
+        if User.objects.filter(email=email).exists():
+            messages.error(request, 'Email already exists')
+            return render(request, 'accounts/register.html')
+        
+        # Create new user (student)
+        try:
+            # Parse the name into first and last name
+            name_parts = name.split(' ', 1)
+            first_name = name_parts[0]
+            last_name = name_parts[1] if len(name_parts) > 1 else ''
+            
+            # Create the user
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                user_type='student'
+            )
+            
+            # Log the user in
+            login(request, user)
+            
+            # Redirect to student dashboard
+            messages.success(request, 'Registration successful! Welcome to College Feedback System.')
+            return redirect('student_dashboard')
+        except Exception as e:
+            messages.error(request, f'Registration failed: {str(e)}')
+    
+    return render(request, 'accounts/register.html')
+
+@login_required
+def logout_view(request):
+    """
+    View for user logout
+    """
+    logout(request)
+    messages.info(request, 'You have been logged out.')
+    return redirect('login')
+
+@login_required
+def student_dashboard(request):
+    """
+    Dashboard view for students
+    """
+    if not request.user.is_student():
+        return redirect('admin_dashboard')
+    
+    # Get the student's feedbacks
+    feedbacks = request.user.submitted_feedbacks.all().order_by('-created_at')
+    
+    context = {
+        'feedbacks': feedbacks
+    }
+    
+    return render(request, 'accounts/student_dashboard.html', context)
+
+@login_required
+def admin_dashboard(request):
+    """
+    Dashboard view for admins
+    """
+    if request.user.is_student():
+        return redirect('student_dashboard')
+    
+    # Get feedbacks assigned to this admin
+    feedbacks = request.user.assigned_feedbacks.all().order_by('-created_at')
+    
+    # Count pending and resolved feedbacks
+    pending_count = feedbacks.filter(status='pending').count()
+    resolved_count = feedbacks.filter(status='resolved').count()
+    
+    context = {
+        'feedbacks': feedbacks,
+        'pending_count': pending_count,
+        'resolved_count': resolved_count
+    }
+    
+    return render(request, 'accounts/admin_dashboard.html', context)

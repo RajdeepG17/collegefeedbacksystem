@@ -1,193 +1,59 @@
 from rest_framework import serializers
-from django.utils import timezone
-from .models import FeedbackCategory, Feedback, FeedbackComment, FeedbackHistory, Notification, FeedbackTag
-from accounts.serializers import UserMinimalSerializer
+from .models import Feedback, FeedbackResponse
+from django.contrib.auth import get_user_model
 
-class FeedbackCategorySerializer(serializers.ModelSerializer):
-    """Serializer for feedback categories"""
-    
+User = get_user_model()
+
+class UserSerializer(serializers.ModelSerializer):
     class Meta:
-        model = FeedbackCategory
-        fields = '__all__'
-
-class FeedbackTagSerializer(serializers.ModelSerializer):
-    feedback_count = serializers.IntegerField(read_only=True)
-
-    class Meta:
-        model = FeedbackTag
-        fields = ['id', 'name', 'color', 'feedback_count', 'created_at']
-        read_only_fields = ['id', 'created_at']
-
-class FeedbackListSerializer(serializers.ModelSerializer):
-    """Serializer for listing feedback"""
-    
-    category = FeedbackCategorySerializer(read_only=True)
-    submitter = serializers.SerializerMethodField()
-    assigned_to = serializers.SerializerMethodField()
-    days_open = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Feedback
-        fields = [
-            'id', 'title', 'content', 'category', 'submitter',
-            'assigned_to', 'status', 'created_at',
-            'updated_at', 'resolved_at', 'days_open', 'rating'
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'resolved_at']
-    
-    def get_submitter(self, obj):
-        return {
-            'id': obj.submitter.id,
-            'email': obj.submitter.email,
-            'name': obj.submitter.get_full_name()
-        }
-    
-    def get_assigned_to(self, obj):
-        if not obj.assigned_to:
-            return None
-        return {
-            'id': obj.assigned_to.id,
-            'email': obj.assigned_to.email,
-            'name': obj.assigned_to.get_full_name()
-        }
-    
-    def get_days_open(self, obj):
-        return obj.days_open
-
-class FeedbackCommentSerializer(serializers.ModelSerializer):
-    """Serializer for feedback comments"""
-    
-    author = UserMinimalSerializer(read_only=True)
-    author_name = serializers.CharField(source='author.get_full_name', read_only=True)
-    
-    class Meta:
-        model = FeedbackComment
-        fields = ['id', 'feedback', 'author', 'author_name', 'comment', 'created_at', 
-                  'updated_at', 'attachment', 'is_internal']
-        read_only_fields = ['id', 'created_at', 'updated_at', 'author']
-        
-    def create(self, validated_data):
-        # Set the author to the current user
-        validated_data['author'] = self.context['request'].user
-        return super().create(validated_data)
-
-class FeedbackHistorySerializer(serializers.ModelSerializer):
-    """Serializer for feedback history"""
-    
-    changed_by = UserMinimalSerializer(read_only=True)
-    old_assigned_to = UserMinimalSerializer(read_only=True)
-    new_assigned_to = UserMinimalSerializer(read_only=True)
-    
-    class Meta:
-        model = FeedbackHistory
-        fields = ['id', 'feedback', 'changed_by', 'old_status', 'new_status',
-                  'old_assigned_to', 'new_assigned_to', 'notes', 'timestamp']
-        read_only_fields = fields
-
-class FeedbackDetailSerializer(FeedbackListSerializer):
-    """Serializer for detailed feedback view"""
-    
-    comments = serializers.SerializerMethodField()
-    history = serializers.SerializerMethodField()
-    
-    class Meta(FeedbackListSerializer.Meta):
-        fields = FeedbackListSerializer.Meta.fields + ['comments', 'history']
-    
-    def get_comments(self, obj):
-        user = self.context['request'].user
-        comments = obj.comments.all()
-        
-        if user.user_type not in ['admin', 'superadmin']:
-            comments = comments.filter(is_internal=False)
-        
-        return FeedbackCommentSerializer(comments, many=True).data
-    
-    def get_history(self, obj):
-        user = self.context['request'].user
-        history = obj.history.all()
-        
-        if user.user_type == 'student':
-            history = history.filter(feedback__submitter=user)
-        
-        return FeedbackHistorySerializer(history, many=True).data
-
-class FeedbackCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating feedback"""
-    
-    class Meta:
-        model = Feedback
-        fields = [
-            'title', 'content', 'category',
-            'attachment', 'rating'
-        ]
-    
-    def validate_category(self, value):
-        if not value.active:
-            raise serializers.ValidationError("This category is not active")
-        return value
-
-class FeedbackUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for updating feedback"""
-    
-    class Meta:
-        model = Feedback
-        fields = [
-            'title', 'content', 'category', 'assigned_to',
-            'status', 'attachment', 'rating'
-        ]
-        read_only_fields = ['submitter']
-    
-    def validate_status(self, value):
-        if value not in dict(Feedback.STATUS_CHOICES):
-            raise serializers.ValidationError("Invalid status")
-        return value
-    
-    def validate_category(self, value):
-        if not value.active:
-            raise serializers.ValidationError("This category is not active")
-        return value
-
-class NotificationSerializer(serializers.ModelSerializer):
-    feedback_title = serializers.CharField(source='feedback.title', read_only=True)
-    feedback_status = serializers.CharField(source='feedback.status', read_only=True)
-
-    class Meta:
-        model = Notification
-        fields = [
-            'id', 'notification_type', 'message', 'is_read',
-            'created_at', 'feedback_title', 'feedback_status'
-        ]
-        read_only_fields = ['id', 'created_at']
-
-class DashboardStatsSerializer(serializers.Serializer):
-    status_counts = serializers.DictField(
-        child=serializers.IntegerField()
-    )
-    category_counts = serializers.ListField(
-        child=serializers.DictField(
-            child=serializers.IntegerField()
-        )
-    )
-    recent = FeedbackListSerializer(many=True)
-    urgent = FeedbackListSerializer(many=True)
-    total = serializers.IntegerField()
+        model = User
+        fields = ['id', 'email', 'first_name', 'last_name', 'user_type']
 
 class FeedbackSerializer(serializers.ModelSerializer):
-    submitter_name = serializers.CharField(source='submitter.get_full_name', read_only=True)
-    assigned_to_name = serializers.CharField(source='assigned_to.get_full_name', read_only=True)
-    category_name = serializers.CharField(source='category.name', read_only=True)
-    comments = FeedbackCommentSerializer(many=True, read_only=True)
+    student_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Feedback
         fields = [
-            'id', 'title', 'content', 'category', 'category_name',
-            'submitter', 'submitter_name', 'assigned_to', 'assigned_to_name',
-            'rating', 'status', 'attachment', 'created_at',
-            'updated_at', 'comments'
+            'id', 'title', 'description', 'category', 'photo', 
+            'status', 'student', 'student_name', 'assigned_admin',
+            'created_at', 'updated_at', 'resolved_at'
         ]
-        read_only_fields = ['submitter']
-
+        read_only_fields = ['student', 'assigned_admin', 'status', 'resolved_at']
+    
+    def get_student_name(self, obj):
+        return f"{obj.student.first_name} {obj.student.last_name}" if obj.student.first_name or obj.student.last_name else obj.student.email
+    
     def create(self, validated_data):
-        validated_data['submitter'] = self.context['request'].user
+        # Set the student to the current user
+        validated_data['student'] = self.context['request'].user
+        
+        # Assign an admin based on the feedback category
+        category = validated_data.get('category')
+        admin_users = User.objects.filter(user_type='admin')
+        
+        if admin_users.exists():
+            # Simple round-robin assignment - in a real app, you'd have more complex logic
+            admin_index = Feedback.objects.count() % admin_users.count()
+            validated_data['assigned_admin'] = admin_users[admin_index]
+        
         return super().create(validated_data)
+
+class FeedbackResponseSerializer(serializers.ModelSerializer):
+    responder_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = FeedbackResponse
+        fields = [
+            'id', 'feedback', 'responder', 'responder_name', 
+            'content', 'created_at', 'is_internal', 'attachment'
+        ]
+        read_only_fields = ['responder', 'created_at']
+    
+    def get_responder_name(self, obj):
+        return f"{obj.responder.first_name} {obj.responder.last_name}" if obj.responder.first_name or obj.responder.last_name else obj.responder.email
+    
+    def create(self, validated_data):
+        # Set the responder to the current user
+        validated_data['responder'] = self.context['request'].user
+        return super().create(validated_data) 

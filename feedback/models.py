@@ -13,7 +13,7 @@ User = get_user_model()
 def validate_file_type(value):
     """Validate that the uploaded file is of an allowed type"""
     ext = os.path.splitext(value.name)[1][1:].lower()
-    allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'txt']
+    allowed_extensions = ['jpg', 'jpeg', 'png', 'gif']
     if ext not in allowed_extensions:
         raise ValidationError(f'File type not allowed. Allowed types: {", ".join(allowed_extensions)}')
     
@@ -27,11 +27,11 @@ def validate_image_file(value):
     ext = os.path.splitext(value.name)[1][1:].lower()
     allowed_extensions = ['jpg', 'jpeg', 'png', 'gif']
     if ext not in allowed_extensions:
-        raise ValidationError(f'File type not allowed. Allowed types: {", ".join(allowed_extensions)}')
+        raise ValueError(f'File type not allowed. Allowed types: {", ".join(allowed_extensions)}')
     
     # Check file size (10MB limit)
     if value.size > 10 * 1024 * 1024:
-        raise ValidationError('File size cannot exceed 10MB')
+        raise ValueError('File size cannot exceed 10MB')
 
 def feedback_attachment_path(instance, filename):
     """Generate path for feedback attachments"""
@@ -81,43 +81,105 @@ class FeedbackTag(models.Model):
         return self.name
 
 class Feedback(models.Model):
-    STATUS_CHOICES = (
-        ('pending', 'Pending'),
-        ('in_progress', 'In Progress'),
-        ('resolved', 'Resolved'),
-        ('closed', 'Closed'),
+    """
+    Model for student feedback
+    """
+    # Category choices
+    ACADEMIC = 'academic'
+    INFRASTRUCTURE = 'infrastructure'
+    ADMINISTRATIVE = 'administrative'
+    
+    CATEGORY_CHOICES = [
+        (ACADEMIC, 'Academic'),
+        (INFRASTRUCTURE, 'Infrastructure'),
+        (ADMINISTRATIVE, 'Administrative'),
+    ]
+    
+    # Status choices
+    PENDING = 'pending'
+    RESOLVED = 'resolved'
+    
+    STATUS_CHOICES = [
+        (PENDING, 'Pending'),
+        (RESOLVED, 'Resolved'),
+    ]
+    
+    # Basic fields
+    title = models.CharField(
+        max_length=200, 
+        help_text="Brief title of the feedback"
     )
-
-    title = models.CharField(max_length=200)
-    content = models.TextField(default="No content provided")
-    category = models.ForeignKey(FeedbackCategory, on_delete=models.CASCADE)
-    submitter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='submitted_feedbacks')
-    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assigned_feedbacks', null=True, blank=True)
-    rating = models.IntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(5)],
-        help_text='Rating from 1 to 5',
+    description = models.TextField(
+        help_text="Detailed description of the feedback"
+    )
+    category = models.CharField(
+        max_length=20, 
+        choices=CATEGORY_CHOICES,
+        help_text="Category of the feedback"
+    )
+    photo = models.ImageField(
+        upload_to='feedback_photos/', 
         null=True, 
-        blank=True
+        blank=True,
+        validators=[validate_image_file],
+        help_text="Optional photo related to the feedback"
     )
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    resolved_at = models.DateTimeField(null=True, blank=True)
-    attachment = models.FileField(upload_to=feedback_attachment_path, null=True, blank=True, validators=[validate_file_type])
-
+    status = models.CharField(
+        max_length=20, 
+        choices=STATUS_CHOICES, 
+        default=PENDING,
+        help_text="Current status of the feedback"
+    )
+    
+    # Relations
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE,
+        related_name='submitted_feedbacks',
+        help_text="Student who submitted the feedback"
+    )
+    assigned_admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL,
+        related_name='assigned_feedbacks',
+        null=True, 
+        blank=True,
+        help_text="Admin assigned to handle this feedback"
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When the feedback was created"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        help_text="When the feedback was last updated"
+    )
+    resolved_at = models.DateTimeField(
+        null=True, 
+        blank=True,
+        help_text="When the feedback was resolved"
+    )
+    
     class Meta:
-        ordering = ['-created_at']
         verbose_name = 'Feedback'
         verbose_name_plural = 'Feedbacks'
-
+        ordering = ['-created_at']
+    
     def __str__(self):
-        return f"{self.title} - {self.submitter.email}"
-        
-    @property
-    def days_open(self):
-        if self.resolved_at:
-            return (self.resolved_at - self.created_at).days
-        return (timezone.now() - self.created_at).days
+        return f"{self.title} ({self.get_category_display()}) - {self.get_status_display()}"
+    
+    def mark_as_resolved(self, admin):
+        """Mark feedback as resolved"""
+        self.status = self.RESOLVED
+        self.assigned_admin = admin
+        self.resolved_at = timezone.now()
+        self.save()
+    
+    def get_admin_type_for_category(self):
+        """Return the admin type needed for this feedback category"""
+        return 'admin'  # Since we only have one admin type now
 
 class FeedbackResponse(models.Model):
     feedback = models.ForeignKey(Feedback, on_delete=models.CASCADE, related_name='responses')
@@ -126,7 +188,7 @@ class FeedbackResponse(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_internal = models.BooleanField(default=False)
-    attachment = models.FileField(upload_to='response_attachments/', null=True, blank=True)
+    attachment = models.ImageField(upload_to='response_attachments/', null=True, blank=True, validators=[validate_image_file])
 
     class Meta:
         ordering = ['created_at']
@@ -163,30 +225,35 @@ class Notification(models.Model):
         return f"{self.get_notification_type_display()} - {self.feedback.title}"
 
 class FeedbackComment(models.Model):
-    """Model to store comments on feedback"""
-    
-    feedback = models.ForeignKey(Feedback, on_delete=models.CASCADE, related_name='comments')
-    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='feedback_comments', null=True, blank=True)
-    comment = models.TextField(validators=[MinLengthValidator(1)])
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    attachment = models.ImageField(
-        upload_to=comment_attachment_path,
-        blank=True,
-        null=True,
-        validators=[validate_image_file]
+    """
+    Model for comments on feedback
+    """
+    feedback = models.ForeignKey(
+        Feedback, 
+        on_delete=models.CASCADE,
+        related_name='comments',
+        help_text="The feedback this comment belongs to"
     )
-    is_internal = models.BooleanField(default=False, help_text="Visible only to admins")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE,
+        help_text="User who made the comment"
+    )
+    comment = models.TextField(
+        help_text="Comment text"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When the comment was created"
+    )
     
     class Meta:
+        verbose_name = 'Feedback Comment'
+        verbose_name_plural = 'Feedback Comments'
         ordering = ['created_at']
-        indexes = [
-            models.Index(fields=['feedback', 'created_at']),
-            models.Index(fields=['author']),
-        ]
     
     def __str__(self):
-        return f"Comment by {self.author.username} on {self.feedback.title}"
+        return f"Comment on {self.feedback.title} by {self.user.get_full_name()}"
 
 class FeedbackHistory(models.Model):
     """Model to track feedback status changes"""

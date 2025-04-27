@@ -5,11 +5,15 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 
 from .serializers import (
     UserSerializer, UserRegistrationSerializer, 
     ChangePasswordSerializer, AdminUserSerializer
 )
+from .forms import LoginForm, StudentRegistrationForm
 
 User = get_user_model()
 
@@ -188,3 +192,135 @@ class UserViewSet(viewsets.ModelViewSet):
         admins = User.objects.filter(user_type='admin', is_active=True)
         serializer = AdminUserSerializer(admins, many=True)
         return Response(serializer.data)
+
+def login_view(request):
+    """
+    View for user login - both students and admins
+    """
+    # Redirect if already logged in
+    if request.user.is_authenticated:
+        if request.user.is_student():
+            return redirect('student_dashboard')
+        else:
+            return redirect('admin_dashboard')
+    
+    # Process login form
+    if request.method == 'POST':
+        form = LoginForm(request.POST)
+        if form.is_valid():
+            username = form.cleaned_data['username']
+            password = form.cleaned_data['password']
+            
+            # Authenticate user
+            user = authenticate(request, username=username, password=password)
+            
+            if user is not None:
+                # Log in the user
+                login(request, user)
+                messages.success(request, f"Welcome back, {user.first_name}!")
+                
+                # Redirect based on user type
+                if user.is_student():
+                    return redirect('student_dashboard')
+                else:
+                    return redirect('admin_dashboard')
+            else:
+                messages.error(request, "Invalid username or password.")
+    else:
+        form = LoginForm()
+    
+    return render(request, 'accounts/login.html', {'form': form})
+
+def register_view(request):
+    """
+    View for student registration
+    """
+    # Redirect if already logged in
+    if request.user.is_authenticated:
+        if request.user.is_student():
+            return redirect('student_dashboard')
+        else:
+            return redirect('admin_dashboard')
+    
+    # Process registration form
+    if request.method == 'POST':
+        form = StudentRegistrationForm(request.POST)
+        if form.is_valid():
+            # Save the user
+            user = form.save()
+            
+            # Log the user in
+            login(request, user)
+            
+            # Success message
+            messages.success(request, f"Account created successfully! Welcome, {user.first_name}!")
+            return redirect('student_dashboard')
+    else:
+        form = StudentRegistrationForm()
+    
+    return render(request, 'accounts/register.html', {'form': form})
+
+@login_required
+def logout_view(request):
+    """
+    View for user logout
+    """
+    logout(request)
+    messages.success(request, "You have been logged out successfully.")
+    return redirect('login')
+
+@login_required
+def profile_view(request):
+    """
+    View for user profile
+    """
+    return render(request, 'accounts/profile.html')
+
+@login_required
+def student_dashboard(request):
+    """
+    Dashboard view for students
+    """
+    # Check if user is a student
+    if not request.user.is_student():
+        messages.error(request, "You don't have permission to access the student dashboard.")
+        return redirect('admin_dashboard')
+    
+    # Get user's feedback submissions
+    feedbacks = request.user.submitted_feedbacks.all()
+    
+    return render(request, 'accounts/student_dashboard.html', {
+        'feedbacks': feedbacks
+    })
+
+@login_required
+def admin_dashboard(request):
+    """
+    Dashboard view for admins
+    """
+    # Check if user is an admin
+    if not request.user.is_admin():
+        messages.error(request, "You don't have permission to access the admin dashboard.")
+        return redirect('student_dashboard')
+    
+    # Determine which category this admin handles
+    admin_type = request.user.user_type
+    
+    # Filter feedbacks based on admin type
+    if admin_type == User.ACADEMIC_ADMIN:
+        category = 'academic'
+        feedbacks = Feedback.objects.filter(category=category)
+    elif admin_type == User.INFRASTRUCTURE_ADMIN:
+        category = 'infrastructure'
+        feedbacks = Feedback.objects.filter(category=category)
+    elif admin_type == User.ADMINISTRATIVE_ADMIN:
+        category = 'administrative'
+        feedbacks = Feedback.objects.filter(category=category)
+    else:
+        # Super admin can see all
+        feedbacks = Feedback.objects.all()
+    
+    return render(request, 'accounts/admin_dashboard.html', {
+        'feedbacks': feedbacks,
+        'admin_type': admin_type
+    })

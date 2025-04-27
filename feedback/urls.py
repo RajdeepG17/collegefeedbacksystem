@@ -1,20 +1,16 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from rest_framework_nested import routers
-from .views import (
-    FeedbackCategoryViewSet,
-    FeedbackViewSet,
-    FeedbackCommentViewSet
-)
-
-router = DefaultRouter()
-router.register(r'categories', FeedbackCategoryViewSet)
-router.register(r'feedbacks', FeedbackViewSet, basename='feedback')
-
-feedback_router = routers.NestedSimpleRouter(router, r'feedbacks', lookup='feedback')
-feedback_router.register(r'comments', FeedbackCommentViewSet, basename='feedback-comments')
+from django.urls import path
+from . import views
 
 urlpatterns = [
-    path('', include(router.urls)),
-    path('feedback/<int:feedback_id>/', include(feedback_router.urls)),
+    # Feedback homepage/index
+    path('', views.list_feedbacks, name='list_feedbacks'),
+    
+    # Submit feedback
+    path('submit/', views.submit_feedback, name='submit_feedback'),
+    
+    # View feedback
+    path('view/<int:feedback_id>/', views.view_feedback, name='view_feedback'),
+    
+    # Resolve feedback
+    path('resolve/<int:feedback_id>/', views.resolve_feedback, name='resolve_feedback'),
 ]
