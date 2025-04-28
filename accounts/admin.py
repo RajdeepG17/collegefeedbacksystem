@@ -7,13 +7,12 @@ from .models import User
 class UserAdmin(BaseUserAdmin):
     list_display = ('email', 'first_name', 'last_name', 'user_type', 'is_staff')
     list_filter = ('user_type', 'is_staff', 'is_superuser', 'is_active')
-    search_fields = ('email', 'first_name', 'last_name', 'student_id')
+    search_fields = ('email', 'first_name', 'last_name')
     ordering = ('email',)
     
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
         (_('Personal info'), {'fields': ('first_name', 'last_name', 'user_type')}),
-        (_('Student info'), {'fields': ('student_id', 'department', 'year_of_study')}),
         (_('Permissions'), {
             'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
         }),
