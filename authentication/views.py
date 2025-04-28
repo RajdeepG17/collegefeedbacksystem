@@ -36,8 +36,38 @@ from .serializers import (
 from .forms import LoginForm
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
+from django.template.loader import render_to_string
+from django.urls import reverse
+import re
+from datetime import datetime, timedelta
 
 User = get_user_model()
+
+# Rate limiting decorator
+def rate_limit(key_prefix, limit=5, period=60):
+    def decorator(view_func):
+        def wrapped_view(request, *args, **kwargs):
+            if request.user.is_authenticated:
+                return view_func(request, *args, **kwargs)
+                
+            ip = request.META.get('REMOTE_ADDR')
+            key = f"{key_prefix}:{ip}"
+            
+            # Get current count
+            count = cache.get(key, 0)
+            
+            if count >= limit:
+                return Response(
+                    {'error': 'Too many attempts. Please try again later.'},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+            
+            # Increment count
+            cache.set(key, count + 1, period)
+            return view_func(request, *args, **kwargs)
+        return wrapped_view
+    return decorator
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     """Custom token view that uses our custom serializer"""
@@ -51,21 +81,41 @@ class UserRegistrationView(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        # Create user
-        user = serializer.save()
-        
-        # Generate tokens
-        refresh = RefreshToken.for_user(user)
-        
-        logger.info(f"User registered successfully: {user.email}")
-
-        return Response({
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': serializer.data
-        }, status=status.HTTP_201_CREATED)
+        if serializer.is_valid():
+            user = serializer.save()
+            
+            # Send welcome email
+            try:
+                subject = 'Welcome to College Feedback System'
+                html_message = render_to_string('accounts/welcome_email.html', {
+                    'user': user,
+                    'login_url': request.build_absolute_uri(reverse('login'))
+                })
+                plain_message = strip_tags(html_message)
+                send_mail(
+                    subject,
+                    plain_message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    html_message=html_message,
+                    fail_silently=False
+                )
+            except Exception as e:
+                # Log the error but don't fail the registration
+                print(f"Failed to send welcome email: {str(e)}")
+            
+            return Response({
+                'message': 'User registered successfully',
+                'user': {
+                    'id': user.id,
+                    'email': user.email,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'user_type': user.user_type
+                }
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     """View for retrieving and updating user profile"""
@@ -80,58 +130,105 @@ class ChangePasswordView(generics.GenericAPIView):
     serializer_class = ChangePasswordSerializer
     permission_classes = (permissions.IsAuthenticated,)
 
+    @rate_limit('change_password')
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        user = request.user
-        user.set_password(serializer.validated_data['new_password'])
-        user.save()
-
-        return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
+        if serializer.is_valid():
+            user = request.user
+            if not user.check_password(serializer.validated_data['old_password']):
+                return Response(
+                    {'error': 'Incorrect old password'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            user.set_password(serializer.validated_data['new_password'])
+            user.save()
+            return Response({'message': 'Password changed successfully'})
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class PasswordResetView(generics.CreateAPIView):
     """View for requesting password reset"""
     permission_classes = [AllowAny]
     serializer_class = PasswordResetSerializer
 
+    @rate_limit('password_reset')
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        email = serializer.validated_data['email']
-        try:
-            user = User.objects.get(email=email)
-            logger.info(f"Password reset requested for {user.email}")
-            # In a real application, you would send an email here
-            return Response({'message': 'Password reset email sent'})
-        except User.DoesNotExist:
-            logger.warning(f"Password reset attempted for non-existent email: {email}")
-            # For security reasons, don't expose that the user doesn't exist
-            return Response({'message': 'Password reset email sent'})
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            try:
+                user = User.objects.get(email=email)
+                # Generate reset token
+                token = default_token_generator.make_token(user)
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+                
+                # Create reset URL
+                reset_url = request.build_absolute_uri(
+                    reverse('password_reset_confirm', kwargs={'uid': uid, 'token': token})
+                )
+                
+                # Send reset email
+                subject = 'Password Reset Request'
+                html_message = render_to_string('accounts/password_reset_email.html', {
+                    'user': user,
+                    'reset_url': reset_url,
+                    'expiry_hours': 24
+                })
+                plain_message = strip_tags(html_message)
+                
+                send_mail(
+                    subject,
+                    plain_message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [email],
+                    html_message=html_message,
+                    fail_silently=False
+                )
+                
+                return Response({
+                    'message': 'Password reset email sent successfully'
+                })
+            except User.DoesNotExist:
+                # Don't reveal whether the email exists
+                return Response({
+                    'message': 'If an account exists with this email, you will receive a password reset link'
+                })
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class PasswordResetConfirmView(generics.GenericAPIView):
     """View for confirming password reset"""
     serializer_class = PasswordResetConfirmSerializer
     permission_classes = (permissions.AllowAny,)
 
-    def post(self, request, *args, **kwargs):
+    @rate_limit('password_reset_confirm')
+    def post(self, request, uid, token, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            uid = force_str(urlsafe_base64_decode(serializer.validated_data['uid']))
-            user = User.objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            return Response({'detail': 'Invalid reset link.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not default_token_generator.check_token(user, serializer.validated_data['token']):
-            return Response({'detail': 'Invalid reset link.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        user.set_password(serializer.validated_data['new_password'])
-        user.save()
-
-        return Response({'detail': 'Password has been reset successfully.'}, status=status.HTTP_200_OK)
+        if serializer.is_valid():
+            try:
+                # Decode uid
+                uid = force_str(urlsafe_base64_decode(uid))
+                user = User.objects.get(pk=uid)
+                
+                # Verify token
+                if not default_token_generator.check_token(user, token):
+                    return Response(
+                        {'error': 'Invalid or expired reset link'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Set new password
+                user.set_password(serializer.validated_data['new_password'])
+                user.save()
+                
+                return Response({
+                    'message': 'Password reset successfully'
+                })
+            except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+                return Response(
+                    {'error': 'Invalid reset link'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class LogoutView(APIView):
     """View for user logout"""
@@ -139,301 +236,24 @@ class LogoutView(APIView):
 
     def post(self, request, *args, **kwargs):
         try:
-            refresh_token = request.data.get("refresh_token")
+            refresh_token = request.data.get('refresh')
             if refresh_token:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
-            logger.info(f"User logged out: {request.user.email}")
-            return Response({'detail': 'Successfully logged out.'}, status=status.HTTP_200_OK)
+            return Response({'message': 'Successfully logged out'})
         except Exception as e:
-            logger.error(f"Logout error: {str(e)}")
-            return Response({'detail': 'Invalid token.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-class UserLoginView(generics.CreateAPIView):
+class UserLoginView(APIView):
+    """Consolidated login view that works with both username and email"""
     permission_classes = [AllowAny]
-    serializer_class = UserLoginSerializer
 
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        email = serializer.validated_data['email']
-        password = serializer.validated_data['password']
-
-        try:
-            user = User.objects.get(email=email)
-            if not user.check_password(password):
-                logger.warning(f"Failed login attempt for user: {email}")
-                return Response(
-                    {'error': 'Invalid credentials'},
-                    status=status.HTTP_401_UNAUTHORIZED
-                )
-
-            refresh = RefreshToken.for_user(user)
-            logger.info(f"User logged in successfully: {email}")
-
-            return Response({
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-                'user': {
-                    'id': user.id,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                    'user_type': user.user_type
-                }
-            }, status=status.HTTP_200_OK)
-        except User.DoesNotExist:
-            logger.warning(f"Login attempt with non-existent email: {email}")
-            return Response(
-                {'error': 'Invalid credentials'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-
-class PasswordChangeView(generics.UpdateAPIView):
-    permission_classes = [IsAuthenticated]
-    serializer_class = PasswordChangeSerializer
-
-    def get_object(self):
-        return self.request.user
-
-    def update(self, request, *args, **kwargs):
-        user = self.get_object()
-        serializer = self.get_serializer(data=request.data)
-        
-        if serializer.is_valid():
-            # Check old password
-            old_password = serializer.validated_data.get('old_password')
-            if not user.check_password(old_password):
-                return Response(
-                    {'old_password': 'Wrong password.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Set new password
-            user.set_password(serializer.validated_data.get('new_password'))
-            user.save()
-            
-            # Update token
-            refresh = RefreshToken.for_user(user)
-            
-            return Response({
-                'status': 'success',
-                'detail': 'Password updated successfully',
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-            })
-            
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class RegisterView(generics.CreateAPIView):
-    """
-    View for user registration with security enhancements
-    """
-    permission_classes = [AllowAny]
-    serializer_class = UserRegistrationSerializer
-    
-    def post(self, request):
-        try:
-            # Sanitize input
-            data = sanitize_input(request.data)
-            
-            # Check if user already exists and can log in
-            email = data.get('email', '')
-            password = data.get('password', '')
-            
-            if User.objects.filter(email=email).exists():
-                # The user already exists, try to authenticate
-                user = authenticate(username=email, password=password)
-                
-                if user and user.is_active:
-                    # The user exists and can log in with these credentials
-                    # This means they're trying to register an account that already exists
-                    # and they know the password - so we can just return a success
-                    refresh = RefreshToken.for_user(user)
-                    
-                    logger.info(
-                        "existing_user_registration_success",
-                        extra={"email": email}
-                    )
-                    
-                    # Return success response as if the user was just created
-                    return Response({
-                        'refresh': str(refresh),
-                        'access': str(refresh.access_token),
-                        'user': UserProfileSerializer(user).data,
-                        'message': 'You already have an account with these credentials. Login successful.'
-                    }, status=status.HTTP_200_OK)
-            
-            # Validate password strength
-            try:
-                validate_password_strength(password)
-            except ValidationError as e:
-                return Response(
-                    {'error': str(e)},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Process registration
-            serializer = UserRegistrationSerializer(data=data)
-            if serializer.is_valid():
-                user = serializer.save()
-                refresh = RefreshToken.for_user(user)
-                
-                logger.info(
-                    "registration_successful",
-                    extra={"email": data.get('email')}
-                )
-                
-                return Response({
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token),
-                    'user': serializer.data,
-                    'message': 'Registration successful'
-                }, status=status.HTTP_201_CREATED)
-            else:
-                logger.warning(
-                    "registration_validation_failed",
-                    extra={"errors": str(serializer.errors)}
-                )
-                return Response(
-                    serializer.errors,
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        except Exception as e:
-            logger.error(
-                "registration_error",
-                extra={"error": str(e)}
-            )
-            return Response(
-                {'error': 'An error occurred during registration'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-class ForgotPasswordView(APIView):
-    """
-    Basic forgot password view
-    """
-    def post(self, request):
-        try:
-            email = sanitize_input(request.data.get('email', ''))
-            
-            try:
-                user = User.objects.get(email=email)
-            except User.DoesNotExist:
-                # Don't reveal whether user exists
-                return Response(
-                    {'message': 'If an account exists with this email, you will receive a password reset link.'},
-                    status=status.HTTP_200_OK
-                )
-
-            # Generate reset token
-            uid, token = generate_password_reset_token(user)
-            
-            # Create reset URL
-            reset_url = f"{settings.SITE_URL}/reset-password/{uid}/{token}/"
-            
-            # Send reset email
-            if send_password_reset_email(user, reset_url):
-                return Response(
-                    {'message': 'Password reset link has been sent to your email.'},
-                    status=status.HTTP_200_OK
-                )
-            else:
-                return Response(
-                    {'error': 'Failed to send password reset email.'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-
-        except Exception as e:
-            logger.error(
-                "forgot_password_error",
-                error=str(e),
-                exc_info=True
-            )
-            return Response(
-                {'error': 'An error occurred while processing your request.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-class ResetPasswordView(APIView):
-    """
-    Basic password reset view
-    """
-    def post(self, request, uid, token):
-        try:
-            # Get user from uid
-            try:
-                user = User.objects.get(pk=uid)
-            except (User.DoesNotExist, ValueError):
-                return Response(
-                    {'error': 'Invalid reset link.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Validate token
-            if not validate_reset_token(user, token):
-                return Response(
-                    {'error': 'Invalid or expired reset link.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Get and validate new password
-            new_password = sanitize_input(request.data.get('password', ''))
-            try:
-                validate_password_strength(new_password)
-            except ValidationError as e:
-                return Response(
-                    {'error': str(e)},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Set new password
-            user.set_password(new_password)
-            user.save()
-
-            logger.info(
-                "password_reset_successful",
-                user=user.email
-            )
-
-            return Response(
-                {'message': 'Password has been reset successfully.'},
-                status=status.HTTP_200_OK
-            )
-
-        except Exception as e:
-            logger.error(
-                "password_reset_error",
-                error=str(e),
-                exc_info=True
-            )
-            return Response(
-                {'error': 'An error occurred while resetting your password.'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-class UserListView(generics.ListAPIView):
-    permission_classes = (permissions.IsAdminUser,)
-    serializer_class = UserProfileSerializer
-    queryset = User.objects.all()
-
-    def get_queryset(self):
-        queryset = User.objects.all()
-        user_type = self.request.query_params.get('user_type', None)
-        if user_type:
-            queryset = queryset.filter(user_type=user_type)
-        return queryset
-
-# Add a simple login view with AllowAny permission
-class SimpleLoginView(APIView):
-    """Simple login view that works with both username and email"""
-    permission_classes = [AllowAny]
-    
+    @rate_limit('login')
     def post(self, request, *args, **kwargs):
-        # Get credentials from request
-        email = request.data.get('email') or request.data.get('username')
+        email = request.data.get('email')
         password = request.data.get('password')
         
         if not email or not password:
@@ -481,39 +301,92 @@ class SimpleLoginView(APIView):
             status=status.HTTP_401_UNAUTHORIZED
         )
 
-def login_view(request):
-    """
-    View for handling user login
-    """
-    # If user is already logged in, redirect to appropriate dashboard
-    if request.user.is_authenticated:
-        if request.user.is_student():
-            return redirect('student_dashboard')
-        else:
-            return redirect('admin_dashboard')
-    
-    if request.method == 'POST':
-        email = request.POST.get('email')
-        password = request.POST.get('password')
-        
-        # Authenticate user
-        user = authenticate(request, username=email, password=password)
-        
-        if user is not None:
-            # Log the user in
-            login(request, user)
-            
-            # Redirect based on user type
-            if user.is_student():
-                return redirect('student_dashboard')
-            else:
-                return redirect('admin_dashboard')
-        else:
-            # Authentication failed
-            messages.error(request, 'Invalid email or password')
-    
-    return render(request, 'accounts/login.html')
+class PasswordChangeView(generics.UpdateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = PasswordChangeSerializer
 
+    def get_object(self):
+        return self.request.user
+
+    @rate_limit('password_change')
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            user = self.get_object()
+            if not user.check_password(serializer.validated_data['old_password']):
+                return Response(
+                    {'error': 'Incorrect old password'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate password strength
+            password = serializer.validated_data['new_password']
+            if not self._validate_password_strength(password):
+                return Response(
+                    {'error': 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            user.set_password(password)
+            user.save()
+            return Response({'message': 'Password changed successfully'})
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def _validate_password_strength(self, password):
+        """Validate password strength"""
+        if len(password) < 8:
+            return False
+        if not re.search(r'[A-Z]', password):
+            return False
+        if not re.search(r'[a-z]', password):
+            return False
+        if not re.search(r'[0-9]', password):
+            return False
+        if not re.search(r'[^A-Za-z0-9]', password):
+            return False
+        return True
+
+class UserListView(generics.ListAPIView):
+    permission_classes = (permissions.IsAdminUser,)
+    serializer_class = UserProfileSerializer
+    queryset = User.objects.all()
+
+    def get_queryset(self):
+        queryset = User.objects.all()
+        user_type = self.request.query_params.get('user_type', None)
+        if user_type:
+            queryset = queryset.filter(user_type=user_type)
+        return queryset
+
+def login_view(request):
+    if request.user.is_authenticated:
+        if request.user.is_staff:
+            return redirect('admin_dashboard')
+        else:
+            return redirect('student_dashboard')
+            
+    if request.method == 'POST':
+        form = LoginForm(request.POST)
+        if form.is_valid():
+            email = form.cleaned_data.get('email')
+            password = form.cleaned_data.get('password')
+            user = authenticate(request, username=email, password=password)
+            
+            if user is not None:
+                login(request, user)
+                messages.success(request, 'Successfully logged in!')
+                if user.is_staff:
+                    return redirect('admin_dashboard')
+                else:
+                    return redirect('student_dashboard')
+            else:
+                messages.error(request, 'Invalid email or password.')
+    else:
+        form = LoginForm()
+        
+    return render(request, 'accounts/login.html', {'form': form})
+
+@rate_limit('web_register')
 def register_view(request):
     """
     View for student registration
@@ -530,6 +403,11 @@ def register_view(request):
         username = request.POST.get('username')
         email = request.POST.get('email')
         password = request.POST.get('password')
+        
+        # Validate password strength
+        if not re.match(r'^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$', password):
+            messages.error(request, 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character')
+            return render(request, 'accounts/register.html')
         
         # Check if username or email already exists
         if User.objects.filter(username=username).exists():
@@ -559,6 +437,26 @@ def register_view(request):
             
             # Log the user in
             login(request, user)
+            
+            # Send welcome email
+            try:
+                subject = 'Welcome to College Feedback System'
+                html_message = render_to_string('accounts/welcome_email.html', {
+                    'user': user,
+                    'login_url': request.build_absolute_uri(reverse('login'))
+                })
+                plain_message = strip_tags(html_message)
+                send_mail(
+                    subject,
+                    plain_message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [email],
+                    html_message=html_message,
+                    fail_silently=False
+                )
+            except Exception as e:
+                # Log the error but don't fail the registration
+                print(f"Failed to send welcome email: {str(e)}")
             
             # Redirect to student dashboard
             messages.success(request, 'Registration successful! Welcome to College Feedback System.')

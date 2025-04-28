@@ -110,7 +110,10 @@ class Feedback(models.Model):
         help_text="Brief title of the feedback"
     )
     description = models.TextField(
-        help_text="Detailed description of the feedback"
+        help_text="Detailed description of the feedback",
+        null=True,
+        blank=True,
+        default=""
     )
     category = models.CharField(
         max_length=20, 
@@ -136,7 +139,9 @@ class Feedback(models.Model):
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE,
         related_name='submitted_feedbacks',
-        help_text="Student who submitted the feedback"
+        help_text="Student who submitted the feedback",
+        null=True,
+        blank=True
     )
     assigned_admin = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
@@ -237,7 +242,9 @@ class FeedbackComment(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE,
-        help_text="User who made the comment"
+        help_text="User who made the comment",
+        null=True,
+        blank=True
     )
     comment = models.TextField(
         help_text="Comment text"

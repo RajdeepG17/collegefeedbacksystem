@@ -163,3 +163,27 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # Only for development, not for production
 CORS_ALLOW_CREDENTIALS = True
+
+# Email settings
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'  # For Gmail
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'your.email@gmail.com'  # Replace with your Gmail address
+EMAIL_HOST_PASSWORD = 'your-app-password'  # Replace with your app password
+DEFAULT_FROM_EMAIL = 'College Feedback System <your.email@gmail.com>'  # Replace with your Gmail address
+
+# Cache settings
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
+}
+
+# Rate limiting settings
+RATE_LIMIT = {
+    'login': {'limit': 5, 'period': 60},  # 5 attempts per minute
+    'password_reset': {'limit': 3, 'period': 3600},  # 3 attempts per hour
+    'register': {'limit': 3, 'period': 3600},  # 3 attempts per hour
+}

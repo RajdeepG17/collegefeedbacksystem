@@ -77,9 +77,24 @@ def logout_view(request):
 
 # URL patterns
 urlpatterns = [
+    # API endpoints
+    path('api/token/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', views.CustomTokenObtainPairView.as_view(), name='token_refresh'),
+    path('api/register/', views.UserRegistrationView.as_view(), name='api_register'),
+    path('api/profile/', views.UserProfileView.as_view(), name='api_profile'),
+    path('api/change-password/', views.ChangePasswordView.as_view(), name='api_change_password'),
+    path('api/password-reset/', views.PasswordResetView.as_view(), name='api_password_reset'),
+    path('api/password-reset/<str:uid>/<str:token>/', views.PasswordResetConfirmView.as_view(), name='api_password_reset_confirm'),
+    path('api/logout/', views.LogoutView.as_view(), name='api_logout'),
+    path('api/login/', views.UserLoginView.as_view(), name='api_login'),
+    path('api/users/', views.UserListView.as_view(), name='api_user_list'),
+    
+    # Web views
     path('login/', views.login_view, name='login'),
     path('register/', views.register_view, name='register'),
     path('logout/', views.logout_view, name='logout'),
     path('dashboard/student/', views.student_dashboard, name='student_dashboard'),
     path('dashboard/admin/', views.admin_dashboard, name='admin_dashboard'),
+    path('password-reset/', views.PasswordResetView.as_view(), name='password_reset'),
+    path('password-reset/confirm/', views.PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
 ] 

@@ -1,6 +1,6 @@
 # College Feedback System
 
-A BCA Final Year Project that enables students to provide feedback to college administration in various categories and allows administrators to view and respond to feedback.
+A PGDCA Final Year Project that enables students to provide feedback to college administration in various categories and allows administrators to view and respond to feedback.
 
 ## Project Overview
 
@@ -133,4 +133,4 @@ college_feedback_system/
 
 ---
 
-© 2023 College Feedback System - BCA Final Year Project
+© 2023 College Feedback System - PGDCA Final Year Project
